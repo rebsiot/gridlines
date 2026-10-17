@@ -2,8 +2,8 @@
   "id": "gridlines",
   "type": "module",
   "title": "Gridlines (Alpha)",
-  "description": "Experimental Foundry v14 square-grid coordinates, shading, named locations and grid-change review. Test-world use only; not verified live.",
-  "version": "0.1.0",
+  "description": "Experimental Foundry v14 Gridlines: discoverable GM launcher, square-grid coordinates, shading, named locations and grid-change review. Test-world use only.",
+  "version": "0.1.1",
   "authors": [
     {
       "name": "AFT (Advanced Features & Tools)"
@@ -20,7 +20,7 @@
   ],
   "url": "https://github.com/rebsiot/gridlines",
   "manifest": "https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json",
-  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.0-alpha.zip",
+  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.1-alpha.zip",
   "readme": "README.md",
   "changelog": "CHANGELOG.md",
   "bugs": "https://github.com/rebsiot/gridlines/issues"

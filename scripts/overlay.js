@@ -41,9 +41,19 @@ export class GridlinesOverlay {
   attach() {
     this.dispose();
     if (!game.user.isGM || !canvas.ready || !canvas.grid?.isSquare) return;
-    const view = canvas?.app?.view ?? canvas?.app?.canvas ?? document.querySelector("#board canvas") ?? document.querySelector("canvas#board");
+    // Pixi v8 exposes Application.canvas; older Foundry builds used view.
+    // Prefer a connected canvas element and give the GM a useful diagnostic.
+    const candidates = [
+      canvas?.app?.canvas, canvas?.app?.view,
+      canvas?.app?.renderer?.canvas, canvas?.app?.renderer?.view,
+      document.querySelector("#board canvas"), document.querySelector("canvas#board")
+    ];
+    const view = candidates.find(el => el?.getBoundingClientRect && el?.parentElement && el.parentElement.isConnected !== false);
     const parent = view?.parentElement;
-    if (!view || !parent) return;
+    if (!view || !parent) {
+      console.warn("Gridlines: Foundry canvas HTML element was not found; overlay unavailable");
+      return;
+    }
     this.view = view;
     this.parent = parent;
     if (getComputedStyle(parent).position === "static") {

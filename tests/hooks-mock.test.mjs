@@ -11,17 +11,23 @@ test('module hooks register v14 Scene Controls GM-only; no automatic writes on r
     globalThis.canvas={ready:false,scene:null};
     await import('../scripts/main.js');
     for(const h of ['getSceneControlButtons','canvasReady','canvasPan','canvasTearDown','updateScene','ready']) assert.ok(listeners.has(h));
-    const gmControls={};
+    const gmControls={tokens: {tools: {select: {name:'select',order:0}}}};
     listeners.get('getSceneControlButtons')(gmControls);
+    assert.equal(gmControls.tokens.tools.gridlinesManager.name,'gridlinesManager');
+    assert.equal(gmControls.tokens.tools.gridlinesManager.button,true);
+    assert.equal(typeof gmControls.tokens.tools.gridlinesManager.onChange,'function');
     assert.equal(gmControls.gridlines.name,'gridlines');
     assert.equal(gmControls.gridlines.tools.select.name,'select');
     assert.equal(gmControls.gridlines.tools.manage.button,true);
     globalThis.game.user.isGM=false;
-    const playerControls={};
+    const playerControls={tokens: {tools: {}}};
     listeners.get('getSceneControlButtons')(playerControls);
     assert.equal(Object.hasOwn(playerControls,'gridlines'),false);
+    assert.equal(Object.hasOwn(playerControls.tokens.tools,'gridlinesManager'),false);
     listeners.get('ready')();
     assert.equal(module.api.parseAddress('AA7').col,26);
     assert.equal(module.api.getState(),null);
+    assert.equal(typeof module.api.openManager,'function');
+    assert.equal(module.api.openManager(),false); // player is not allowed to open the GM palette
   } finally {for(const [key,val] of Object.entries(previous)){if(val===undefined)delete globalThis[key];else globalThis[key]=val;}}
 });

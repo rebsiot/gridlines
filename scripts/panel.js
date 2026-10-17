@@ -42,7 +42,12 @@ export class GridlinesPanel {
 
   get scene() { return canvas.ready ? canvas.scene : null; }
   open() { this.visible = true; this.render(); }
-  close() { this.visible = false; this.root?.remove(); this.root = null; }
+  close() {
+    // A closed panel must never leave an invisible click-catching overlay active.
+    this.overlay.setSelecting(false);
+    this.visible = false;
+    this.root?.remove(); this.root = null;
+  }
   toggle() { this.visible ? this.close() : this.open(); }
   refresh() { if (this.visible) this.render(); }
   setSelection(range) {
@@ -151,6 +156,12 @@ export class GridlinesPanel {
       return;
     }
     this.preservePreview = null;
+    const selectionTools = node("div", root, undefined, "gridlines-section gridlines-actions");
+    button(this.overlay.selecting ? "Stop Selecting Cells" : "Select Cells on Map", () => this.run(() => {
+      if (!this.overlay.root) this.overlay.attach();
+      if (!this.overlay.root) throw new Error("Gridlines overlay could not attach to Foundry's canvas; check the browser console");
+      this.overlay.setSelecting(!this.overlay.selecting);
+    }), selectionTools);
     const nav = node("div", root, undefined, "gridlines-section");
     node("strong", nav, "Go To");
     const navRow = node("div", nav, undefined, "gridlines-actions");

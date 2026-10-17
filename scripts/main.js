@@ -39,6 +39,19 @@ function safeRefresh() {
 
 Hooks.on("getSceneControlButtons", controls => {
   if (!game.user.isGM) return;
+  // Keep the dedicated Gridlines control, but also register a discoverable entry
+  // in Foundry's native Token palette. Native controls are documented v14 API.
+  if (controls.tokens?.tools) {
+    controls.tokens.tools.gridlinesManager = {
+      name: "gridlinesManager",
+      order: Object.keys(controls.tokens.tools).length + 30,
+      title: "Gridlines: Open Manager",
+      icon: "fa-solid fa-table-cells-large",
+      visible: true,
+      button: true,
+      onChange: () => panel.open()
+    };
+  }
   controls.gridlines = {
     name: "gridlines",
     order: 95,
@@ -81,6 +94,7 @@ Hooks.once("ready", () => {
   const exposed = Object.freeze({
     getState: (scene = canvas?.scene) => scene ? structuredClone(service.read(scene)) : null,
     getAlignmentStatus: (scene = canvas?.scene) => scene ? service.getStatus(scene) : null,
+    openManager: () => { if (!game.user?.isGM) return false; panel.open(); return true; },
     formatAddress, parseAddress, parseRange, formatRange,
     resolveAt: (point) => canvas?.ready && canvas.grid?.isSquare ? squareResolver(canvas.grid, canvas.dimensions.sceneRect).locate(point) : null
   });

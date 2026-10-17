@@ -2,16 +2,18 @@
 
 Gridlines helps a GM identify, shade, and name map cells without adding Tiles, Drawings, or Regions. It uses **Foundry's existing square Scene grid**, and does not resize or calibrate that grid itself.
 
-**Status: v0.1.0 experimental alpha, available through the GitHub-hosted manifest. Not live-tested in Foundry.** This is not an official Foundry package listing or stable release. Install only in a backed-up test world.
+**Status: v0.1.1 experimental alpha, available through the GitHub-hosted manifest. Not live-tested in Foundry.** This is not an official Foundry package listing or stable release. Install only in a backed-up test world.
+
+**v0.1.1 fixes:** A manifest-install ZIP now places `module.json` directly at the ZIP root (v0.1.0 packaged an extra directory). Gridlines Manager is also accessible from Foundry's standard Token Controls. On an existing installation, use **Check Update** and confirm version 0.1.1 before retrying. The module is still not live-tested.
 
 ## Get started: shade and name a map location
 
 1. **Back up your Foundry test world first.** Install and enable this module in a **test world**, not your active campaign.
-2. Open a Scene that uses a native **square grid**. On Foundry's left-hand Scene Controls, choose **Gridlines**, then **Gridlines Manager**.
+2. Open a Scene that uses a native **square grid**. As GM, choose **Token Controls** (person icon, left) and click **Gridlines: Open Manager** in its tool palette. A separate **Gridlines** Scene Control may also be available.
 3. Click **Enable on this Scene**. The overlay lines use your existing native grid; no native Scene grid setting is changed.
-4. Activate **Select Cells**. Drag across a rectangular selection, such as D3:F5. In the floating Gridlines panel, choose a color and click **Shade Selection**.
+4. Click **Select Cells on Map** in the manager. Drag across a rectangular selection, such as D3:F5. In the floating Gridlines panel, choose a color and click **Shade Selection**.
 5. Enter `Warehouse` under **Named Ranges** and click **Save Name**. Search `Warehouse` under **Go To** to pan to that area. Reload the Scene to check persistence.
-6. To leave selection mode, switch back to Foundry's native Tokens control.
+6. To leave selection mode, click **Stop Selecting Cells** or close the Gridlines manager. Your normal Foundry controls resume immediately.
 
 ### Check what happens when the native Foundry grid changes
 
@@ -26,7 +28,7 @@ No existing Actor, Tile, Drawing, Region, Wall, Journal, or native Scene grid se
 ## Current features
 
 - Excel-style square-cell addresses: A1, D7, Z1, AA1, rectangular ranges.
-- GM-only Scene Controls entry, click-and-drag selection, custom major/minor line overlay and coordinate labels.
+- GM-only Token Controls launcher plus dedicated Scene Control, click-and-drag selection, custom major/minor line overlay and coordinate labels.
 - Shading and named ranges saved to Scene flags, navigation to addresses or saved names.
 - Native-grid size/type/dimension change detection and guarded alignment resolution.
 - Read-only programmatic module API for future Gridlines+ integration (`game.modules.get('gridlines').api`).
@@ -48,8 +50,8 @@ No existing Actor, Tile, Drawing, Region, Wall, Journal, or native Scene grid se
 For the published experimental alpha, in Foundry Setup choose **Add-on Modules → Install Module**, enter `https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json` in **Manifest URL**, and install. Then enable it only in a test world. For a manual ZIP installation:
 
 1. Stop Foundry. Back up the test world (and the existing `Data/modules/gridlines` folder if one exists).
-2. Extract the ZIP so that `Data/modules/gridlines/module.json` exists directly, not in an additional nested folder. In the St. Louis environment, `Z:\Data\modules\gridlines\module.json` is the target.
-3. Restart Foundry, enable **Gridlines (Private Prototype)** in the test world, then refresh the browser.
+2. Create `Data/modules/gridlines/`, then extract the **contents** of the ZIP into that folder. The ZIP contains `module.json` at its root: the installed path must be `Data/modules/gridlines/module.json` (St. Louis: `Z:\Data\modules\gridlines\module.json`). Avoid any extra nested folder.
+3. Restart Foundry, verify version **0.1.1**, enable **Gridlines (Alpha)** in the test world, then refresh the browser.
 4. Follow the Warehouse example above. Verify the browser console has no Gridlines errors.
 
 ### Rollback

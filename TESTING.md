@@ -1,3 +1,7 @@
+# Gridlines 0.1.1 - Prototype verification
+
+**Additional local checks:** `module.json` appears at ZIP root; no duplicate module folder; native Token Controls launcher is GM-only; manager has manual select/stop controls; source syntax checks and Node mock tests. Native Foundry v14 live behavior is **unverified**.
+
 # Gridlines - Prototype verification
 
 ## Evidence summary
