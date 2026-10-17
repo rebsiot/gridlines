@@ -10,6 +10,8 @@ const panel = new GridlinesPanel(service, overlay);
 overlay.snapshotProvider = geometrySnapshot;
 overlay.onSelection = range => panel.setSelection(range);
 overlay.onContextMenu = () => panel.open();
+overlay.onCalibration = guide => panel.applyCalibration(guide);
+overlay.onCalibrationCancelled = () => panel.refresh();
 let lastWarning = null;
 
 function safeRefresh() {
@@ -25,6 +27,7 @@ function safeRefresh() {
         ui.notifications.warn("Gridlines: Foundry's grid changed. Open Gridlines to review saved locations before editing.", {permanent: true});
       }
       overlay.setSelecting(false);
+      overlay.stopCalibration();
       overlay.setPreviewAxes(null);
       panel.axesDraft = null;
       panel.open();

@@ -23,6 +23,12 @@ export class GridlinesOverlay {
     this.selection = null;
     this.dragStart = null;
     this.selecting = false;
+    this.calibrating = null;
+    this.calibrationStart = null;
+    this.calibrationEnd = null;
+    this.calibrationGuide = null;
+    this.onCalibration = () => false;
+    this.onCalibrationCancelled = () => {};
     this.localVisible = true;
     this.sceneState = null;
     this.previewAxes = null;
@@ -94,6 +100,10 @@ export class GridlinesOverlay {
     this.parent = null;
     this.view = null;
     this.dragStart = null;
+    this.calibrating = null;
+    this.calibrationStart = null;
+    this.calibrationEnd = null;
+    this.calibrationGuide = null;
   }
 
   setSceneState(value) { this.sceneState = value; this.schedule(); }
@@ -104,10 +114,40 @@ export class GridlinesOverlay {
   }
   setVisible(visible) { this.localVisible = Boolean(visible); this.schedule(); }
   setSelecting(active) {
+    if (active && this.calibrating) this.stopCalibration();
     this.selecting = Boolean(active);
     if (!this.selecting) this.dragStart = null;
-    this.root?.classList.toggle("gridlines-selecting", this.selecting && !this.pending && !this.geometryPreviewPending);
+    this.syncInteraction();
     this.schedule();
+  }
+  syncInteraction() {
+    this.root?.classList.toggle("gridlines-selecting", this.selecting && !this.pending && !this.geometryPreviewPending);
+    this.root?.classList.toggle("gridlines-calibrating", Boolean(this.calibrating) && !this.pending);
+  }
+  startCalibration(cells) {
+    if (![1, 5, 10].includes(cells)) throw new Error("Invalid calibration guide size");
+    if (!this.root || !this.sceneState || this.pending || !canvas.ready || !canvas.grid?.isSquare)
+      throw new Error("Enable Gridlines on a square-grid Scene before drawing a guide");
+    this.selecting = false;
+    this.dragStart = null;
+    this.calibrating = cells;
+    this.selection = null;
+    this.onSelection(null);
+    this.calibrationStart = null;
+    this.calibrationEnd = null;
+    this.calibrationGuide = null;
+    this.syncInteraction();
+    this.schedule();
+  }
+  stopCalibration({clearGuide = true} = {}) {
+    const wasCalibrating = Boolean(this.calibrating);
+    this.calibrating = null;
+    this.calibrationStart = null;
+    this.calibrationEnd = null;
+    if (clearGuide) this.calibrationGuide = null;
+    this.syncInteraction();
+    this.schedule();
+    if (wasCalibrating) this.onCalibrationCancelled();
   }
   setSelection(range) {
     this.selection = range;
@@ -126,6 +166,13 @@ export class GridlinesOverlay {
     this.frame = requestAnimationFrame(() => { this.frame = 0; this.render(); });
   }
 
+  scenePointFromEvent(event) {
+    if (!canvas.ready || !canvas.grid?.isSquare || this.pending) return null;
+    const point = canvas.canvasCoordinatesFromClient({x: event.clientX, y: event.clientY});
+    const rect = canvas.dimensions.sceneRect;
+    return point && point.x >= rect.x && point.y >= rect.y &&
+      point.x <= rect.x + rect.width && point.y <= rect.y + rect.height ? point : null;
+  }
   pointFromEvent(event) {
     if (!canvas.ready || !canvas.grid?.isSquare || this.pending || this.geometryPreviewPending) return null;
     const point = canvas.canvasCoordinatesFromClient({x: event.clientX, y: event.clientY});
@@ -133,6 +180,17 @@ export class GridlinesOverlay {
   }
 
   onDown(event) {
+    if (this.calibrating && !this.pending && event.button === 0) {
+      const point = this.scenePointFromEvent(event);
+      if (!point) return;
+      event.preventDefault();event.stopPropagation();
+      this.calibrationStart = point;
+      this.calibrationEnd = point;
+      this.calibrationGuide = null;
+      try { this.root.setPointerCapture(event.pointerId); } catch { /* optional */ }
+      this.schedule();
+      return;
+    }
     if (!this.selecting || this.pending || this.geometryPreviewPending || event.button !== 0) return;
     const cell = this.pointFromEvent(event);
     if (!cell) return;
@@ -144,6 +202,11 @@ export class GridlinesOverlay {
   }
 
   onMove(event) {
+    if (this.calibrationStart) {
+      const point = this.scenePointFromEvent(event);
+      if (point) {this.calibrationEnd = point;this.schedule();}
+      return;
+    }
     if (!this.dragStart) return;
     const cell = this.pointFromEvent(event);
     if (!cell) return;
@@ -151,6 +214,25 @@ export class GridlinesOverlay {
   }
 
   onUp(event) {
+    if (this.calibrationStart) {
+      const last = this.scenePointFromEvent(event) ?? this.calibrationEnd;
+      const guide = {from: this.calibrationStart, to: last, cells: this.calibrating};
+      this.calibrationStart = null;
+      this.calibrationEnd = null;
+      try {this.root.releasePointerCapture(event.pointerId);} catch { /* optional */ }
+      // No document writes or changes to native Foundry geometry occur here.
+      const previousMode = this.calibrating;
+      this.calibrating = null;
+      const accepted = this.onCalibration(guide) === true;
+      if (accepted) this.calibrationGuide = guide;
+      else {
+        this.calibrating = previousMode; // Retry an insufficient or malformed span.
+        this.onCalibrationCancelled(); // Refresh the guide buttons.
+      }
+      this.syncInteraction();
+      this.schedule();
+      return;
+    }
     if (!this.dragStart) return;
     const cell = this.pointFromEvent(event);
     if (cell) this.setSelection(normalizeRange(this.dragStart, cell));
@@ -158,16 +240,22 @@ export class GridlinesOverlay {
     try { this.root.releasePointerCapture(event.pointerId); } catch { /* no capture */ }
   }
 
-  onCancel() { this.dragStart = null; }
+  onCancel() {
+    this.dragStart = null;
+    this.calibrationStart = null;
+    this.calibrationEnd = null;
+    this.schedule();
+  }
   onContext(event) {
-    if (!this.selecting) return;
+    if (!this.selecting && !this.calibrating) return;
     event.preventDefault();
     event.stopPropagation();
     this.onContextMenu();
   }
   onEscape(event) {
-    if (!this.selecting || event.key !== "Escape" || event.target?.matches?.("input,textarea,[contenteditable]")) return;
-    this.setSelection(null);
+    if ((!this.selecting && !this.calibrating) || event.key !== "Escape" || event.target?.matches?.("input,textarea,[contenteditable]")) return;
+    if (this.calibrating) this.stopCalibration();
+    else this.setSelection(null);
   }
 
   render() {
@@ -182,8 +270,9 @@ export class GridlinesOverlay {
     this.svg.setAttribute("viewBox", `0 0 ${viewRect.width} ${viewRect.height}`);
     this.svg.replaceChildren();
     const state = this.sceneState;
-    this.root.classList.toggle("gridlines-selecting", this.selecting && !this.pending && !this.geometryPreviewPending);
-    if (!this.localVisible || !state || !canvas.ready || !canvas.grid?.isSquare || viewRect.width < 1 || viewRect.height < 1) return;
+    this.syncInteraction();
+    if (!state || !canvas.ready || !canvas.grid?.isSquare || viewRect.width < 1 || viewRect.height < 1) return;
+    if (!this.localVisible && !this.calibrating && !this.calibrationGuide) return;
     const sceneRect = canvas.dimensions.sceneRect;
     const axes = this.axes;
     const resolver = overlayResolver(canvas.grid, sceneRect, axes);
@@ -202,7 +291,7 @@ export class GridlinesOverlay {
     const screenB = toScreen({x: visibleWorld.right, y: visibleWorld.bottom});
     // All guides are calculated from the same preview-aware origin/spacing as
     // hit-testing, formatted cell bounds, and named range navigation.
-    if (axes.enabled) {
+    if (axes.enabled && this.localVisible) {
       const step = size * axes.majorEvery / axes.minorDivisions;
       const xMin = Math.max(0, Math.ceil((visibleWorld.x - origin.x) / step - 1e-9));
       const xMax = Math.floor((visibleWorld.right - origin.x) / step + 1e-9);
@@ -254,27 +343,45 @@ export class GridlinesOverlay {
     }
 
     if (status) return; // Never show stale formatting against changed native coordinates.
-    for (const format of state.formats) {
+    if (this.localVisible) for (const format of state.formats) {
       const box = clipBounds(resolver.rangeBounds(format.range), sceneRect);
       if (!box) continue;
       const a = toScreen({x: box.x, y: box.y});
       const b = toScreen({x: box.right, y: box.bottom});
       this.svg.append(svgElement("rect", {x: a.x, y: a.y, width: Math.max(0, b.x - a.x), height: Math.max(0, b.y - a.y), fill: format.fill, "fill-opacity": format.opacity, stroke: "none"}));
     }
-    for (const named of state.namedRanges) {
+    if (this.localVisible) for (const named of state.namedRanges) {
       const box = clipBounds(resolver.rangeBounds(named.range), sceneRect);
       if (!box) continue;
       const a = toScreen({x: box.x, y: box.y});
       const b = toScreen({x: box.right, y: box.bottom});
       this.svg.append(svgElement("rect", {x: a.x, y: a.y, width: Math.max(0, b.x - a.x), height: Math.max(0, b.y - a.y), fill: "none", stroke: "#eab75e", "stroke-width": 1.5, "stroke-dasharray": "6 4", "stroke-opacity": .85}));
     }
-    if (this.selection) {
+    if (this.selection && this.localVisible) {
       const box = clipBounds(resolver.rangeBounds(this.selection), sceneRect);
       if (box) {
         const a = toScreen({x: box.x, y: box.y});
         const b = toScreen({x: box.right, y: box.bottom});
         this.svg.append(svgElement("rect", {x: a.x, y: a.y, width: Math.max(0, b.x - a.x), height: Math.max(0, b.y - a.y), fill: "#3b82f6", "fill-opacity": .15, stroke: "#60a5fa", "stroke-width": 2}));
       }
+    }
+    const guide = this.calibrationStart
+      ? {from: this.calibrationStart, to: this.calibrationEnd ?? this.calibrationStart, cells: this.calibrating}
+      : this.calibrationGuide;
+    if (guide) {
+      const a = toScreen(guide.from), b = toScreen(guide.to);
+      const x = Math.min(a.x,b.x), y = Math.min(a.y,b.y);
+      const width = Math.abs(a.x-b.x), height = Math.abs(a.y-b.y);
+      if (Math.min(width,height) > 8) {
+        this.svg.append(svgElement("rect", {class:"gridlines-calibration-guide",x,y,width,height,
+          fill:"#f59e0b","fill-opacity":.09,stroke:"#fbbf24","stroke-width":2.5,"stroke-dasharray":"9 5"}));
+      }
+      this.svg.append(svgElement("line", {class:"gridlines-calibration-guide",x1:a.x,y1:a.y,x2:b.x,y2:b.y,
+        stroke:"#fbbf24","stroke-width":2.5,"stroke-dasharray":"8 4"}));
+      for(const p of [a,b]) this.svg.append(svgElement("circle", {cx:p.x,cy:p.y,r:4,fill:"#fbbf24",stroke:"#111827","stroke-width":1}));
+      const note = svgElement("text", {class:"gridlines-calibration-label",x:x+9,y:Math.max(18,y-8)});
+      note.textContent = `${guide.cells} x ${guide.cells} calibration`;
+      this.svg.append(note);
     }
   }
 }

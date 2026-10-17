@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3 — 2026-10-17 (experimental alpha)
+
+- Added **Draw 10x10 / 5x5 / 1x1 Guide** to GM Grid Setup. Drag horizontally or vertically across that many printed squares to measure a cell size and align the corresponding axis; drag corner-to-corner across an N×N printed square to align both X and Y.
+- Calibration uses temporary SVG lines and a rectangle while dragging; no Foundry Drawing, Region, Tile, native-grid setting or Scene document is created or altered by a guide drag.
+- On release, Gridlines calculates the nearest congruent overlay origin, previews cell size and X/Y offsets, and requires **Save Grid Setup** to persist. Cancel, Escape, or Discard Preview does not save changes.
+- Rejects too-short guides, distorted rectangles, and invalid cell sizes. Scene data with saved named ranges or fills retains its backup confirmation requirement before changing geometry.
+- During a geometry preview, range navigation and creating/shading named cells are blocked until Save or Discard. Preserves existing v0.1.2 Scene flags, named-range IDs, and major/minor styling defaults; no schema migration.
+- Local Node/mock tests: see `TESTING.md`. **Live Foundry v14 validation not performed.**
+- Upgrade: back up test world and module folder, update via the existing manifest and hard-refresh; rollback with the previous ZIP and corresponding world snapshot if you saved new Scene settings.
+
 ## 0.1.2 — 2026-10-17 (experimental alpha)
 
 - Added editable **overlay cell size (px)** and **X/Y offsets**. These affect Gridlines visuals, selections and Go To positions, not the native Foundry movement grid.

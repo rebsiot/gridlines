@@ -1,4 +1,5 @@
-import {parseRange, normalizeRange, formatRange, overlayResolver, parseMajorRange, formatMajorRange} from "./coordinates.js";
+import {parseRange, normalizeRange, formatRange, overlayResolver, squareResolver, parseMajorRange, formatMajorRange} from "./coordinates.js";
+import {calibrateGuide, CALIBRATION_PRESETS} from "./calibration.js";
 import {geometrySnapshot, alignmentStatus, addFill, addNamedRange, normalizeAxes, validateAxes, overlayGeometryChanged} from "./model.js";
 
 const uid = () => globalThis.crypto?.randomUUID?.() ?? foundry.utils.randomID();
@@ -37,6 +38,7 @@ export class GridlinesPanel {
     this.selection = null;
     this.inputs = {color: "#2563eb", opacity: "25", name: "", go: ""};
     this.axesDraft = null;
+    this.calibrationResult = null;
     this.draftSceneId = null;
     this.preservePreview = null;
     this.statusText = "";
@@ -47,8 +49,10 @@ export class GridlinesPanel {
   close() {
     // A closed panel must never leave an invisible click-catching overlay active.
     this.overlay.setSelecting(false);
+    this.overlay.stopCalibration?.();
     this.visible = false;
     this.axesDraft = null;
+    this.calibrationResult = null;
     this.draftSceneId = null;
     this.overlay.setPreviewAxes?.(null);
     this.root?.remove(); this.root = null;
@@ -73,6 +77,32 @@ export class GridlinesPanel {
       return null;
     }
   }
+  /** Receive a finished temporary canvas guide and preview its calculated geometry. */
+  applyCalibration(guide) {
+    try {
+      const scene = this.scene;
+      const state = this.service.read(scene);
+      if (!scene || !state || alignmentStatus(state, geometrySnapshot(scene)).pending)
+        throw new Error("Enable Gridlines and resolve any native grid changes first");
+      const native = squareResolver(canvas.grid, canvas.dimensions.sceneRect);
+      const origin = native.bounds({row:0,col:0});
+      const draft = normalizeAxes(this.axesDraft ?? state.axes);
+      const measured = calibrateGuide({from:guide.from,to:guide.to,cells:guide.cells,
+        nativeOrigin:{x:origin.x,y:origin.y},nativeSize:Number(canvas.grid.sizeX),axes:draft});
+      const next = validateAxes({...draft,...measured.recommended});
+      this.axesDraft = next;
+      this.calibrationResult = measured;
+      this.overlay.setPreviewAxes(next);
+      this.announce(`Calibration preview: ${measured.recommended.cellSize}px cells; ${measured.mode} guide`);
+      return true;
+    } catch(error) {
+      ui.notifications?.warn?.(`Gridlines calibration: ${error.message}`);
+      this.statusText = `Try the guide again: ${error.message}`;
+      this.refresh();
+      return false;
+    }
+  }
+
   currentSelection() {
     if (!this.selection) throw new Error("Select cells first, using Gridlines > Select Cells");
     return normalizeRange(this.selection.from, this.selection.to);
@@ -90,6 +120,8 @@ export class GridlinesPanel {
     const state = this.service.read(this.scene);
     if (!state) throw new Error("Enable Gridlines on this Scene first");
     if (alignmentStatus(state, geometrySnapshot(this.scene)).pending) throw new Error("Resolve the grid alignment warning first");
+    if (this.overlay.geometryPreviewPending || this.overlay.calibrating)
+      throw new Error("Save or discard the grid calibration preview before navigating");
     const target = String(value || "").trim();
     const named = state.namedRanges.find(n => n.name.toLocaleLowerCase() === target.toLocaleLowerCase());
     const axes = normalizeAxes(state.axes);
@@ -132,7 +164,10 @@ export class GridlinesPanel {
       return;
     }
     const pending = alignmentStatus(state, snapshot).pending;
-    if (this.draftSceneId !== scene.id) {this.axesDraft=null;this.draftSceneId=scene.id;this.overlay.setPreviewAxes(null);}
+    if (this.draftSceneId !== scene.id) {
+      this.axesDraft=null;this.calibrationResult=null;
+      this.draftSceneId=scene.id;this.overlay.setPreviewAxes(null);
+    }
     if (pending) {
       const warning = node("div", root, undefined, "gridlines-warning");
       node("strong", warning, "Foundry grid alignment changed");
@@ -176,6 +211,29 @@ export class GridlinesPanel {
     options.open = true;
     node("summary", options, "Grid Setup — live preview");
     node("p", options, "These settings change only Gridlines' visual overlay, not Foundry's native movement grid. Changes preview immediately; click Save to keep them.");
+    const calibration = node("div", options, undefined, "gridlines-calibration-controls");
+    node("strong", calibration, "Draw to align a printed map grid");
+    node("p", calibration, "Choose 10x10, 5x5, or 1x1. Drag horizontally/vertically across that many printed squares to calibrate one axis, or drag diagonally from corner to corner to calibrate both. Release to preview; nothing is saved until Save Grid Setup.");
+    const guideButtons = node("div", calibration, undefined, "gridlines-actions");
+    for (const n of CALIBRATION_PRESETS) {
+      button(`Draw ${n}x${n} Guide`, () => this.run(() => {
+        if (!this.overlay.root) this.overlay.attach();
+        this.overlay.startCalibration(n);
+        this.calibrationResult = null;
+      }), guideButtons, {disabled: this.overlay.calibrating === n});
+    }
+    if (this.overlay.calibrating) {
+      node("p",calibration, `Drawing ${this.overlay.calibrating}x${this.overlay.calibrating} guide. Drag over the printed map grid. Escape cancels.`);
+      button("Cancel Guide", () => {
+        this.overlay.stopCalibration();
+        this.calibrationResult = null;
+        this.refresh();
+      },guideButtons);
+    }
+    if (this.calibrationResult) {
+      const measured = this.calibrationResult;
+      node("p",calibration, `Measured ${measured.recommended.cellSize}px per cell (${measured.mode}). Preview offsets: X ${this.axesDraft.offsetX}px / Y ${this.axesDraft.offsetY}px. Not saved yet.`);
+    }
     const settingsFields = node("div", options, undefined, "gridlines-actions");
     const size = field("Overlay cell size (px; blank = Foundry)", "number", settingsFields, draft.cellSize == null ? "" : String(draft.cellSize));
     size.min="10";size.max="2000";size.step="1";
@@ -242,11 +300,15 @@ export class GridlinesPanel {
         throw new Error("Back up your Scene and confirm moving existing overlay locations first");
       await this.service.edit(scene,state.revision,current=>{current.axes=next;});
       this.axesDraft=null;
+      this.calibrationResult=null;
+      this.overlay.stopCalibration?.();
       this.overlay.setPreviewAxes?.(null);
       this.announce("Gridlines overlay setup saved");
     }),actions);
     button("Discard Preview",()=>{
       this.axesDraft=null;
+      this.calibrationResult=null;
+      this.overlay.stopCalibration?.();
       this.overlay.setPreviewAxes?.(null);
       this.refresh();
     },actions);
@@ -288,6 +350,8 @@ export class GridlinesPanel {
     opacity.min = "0"; opacity.max = "100"; opacity.step = "5";
     opacity.addEventListener("input", () => { this.inputs.opacity = opacity.value; });
     button("Shade Selection", () => this.run(async () => {
+      if (this.overlay.geometryPreviewPending || this.overlay.calibrating)
+        throw new Error("Save or discard the grid calibration preview before shading cells");
       const selected = this.validateRange(this.currentSelection());
       await this.service.edit(scene, state.revision, current => {
         addFill(current, selected, color.value, Number(opacity.value) / 100, uid());
@@ -302,6 +366,8 @@ export class GridlinesPanel {
     name.setAttribute("aria-label", "Name selected cells");
     name.addEventListener("input", () => { this.inputs.name = name.value; });
     button("Save Name", () => this.run(async () => {
+      if (this.overlay.geometryPreviewPending || this.overlay.calibrating)
+        throw new Error("Save or discard the grid calibration preview before naming cells");
       const selected = this.validateRange(this.currentSelection());
       await this.service.edit(scene, state.revision, current => addNamedRange(current, name.value, selected, uid()));
       this.inputs.name = "";
