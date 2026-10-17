@@ -1,3 +1,7 @@
-# Gridlines
+# Gridlines — experimental alpha
 
-Experimental Foundry VTT v14 alpha module. Not tested live. The README, source, module manifest and alpha ZIP are being published together; do not install on a production world.
+This repository has been initialized for the experimental Gridlines Foundry v14 module.
+
+**Publication incomplete:** `module.json`, module source, and the installable v0.1.0 ZIP are not yet uploaded here. No functioning Foundry manifest URL is available yet. Do not use `https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json` until those files are published and verified.
+
+The existing v0.1.0 test build passed 11 local automated/mock tests, but has **not** been verified in a live Foundry world. Test-world use only. No software redistribution license has been granted yet.
