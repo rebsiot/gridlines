@@ -1,5 +1,5 @@
 import {MODULE_ID, geometrySnapshot, alignmentStatus} from "./model.js";
-import {formatAddress, parseAddress, parseRange, formatRange, squareResolver} from "./coordinates.js";
+import {formatAddress, parseAddress, parseRange, formatRange, squareResolver, overlayResolver, parseMajorRange, formatMajorRange} from "./coordinates.js";
 import {SceneService} from "./service.js";
 import {GridlinesOverlay} from "./overlay.js";
 import {GridlinesPanel} from "./panel.js";
@@ -25,6 +25,8 @@ function safeRefresh() {
         ui.notifications.warn("Gridlines: Foundry's grid changed. Open Gridlines to review saved locations before editing.", {permanent: true});
       }
       overlay.setSelecting(false);
+      overlay.setPreviewAxes(null);
+      panel.axesDraft = null;
       panel.open();
     } else {
       lastWarning = null;
@@ -95,8 +97,9 @@ Hooks.once("ready", () => {
     getState: (scene = canvas?.scene) => scene ? structuredClone(service.read(scene)) : null,
     getAlignmentStatus: (scene = canvas?.scene) => scene ? service.getStatus(scene) : null,
     openManager: () => { if (!game.user?.isGM) return false; panel.open(); return true; },
-    formatAddress, parseAddress, parseRange, formatRange,
-    resolveAt: (point) => canvas?.ready && canvas.grid?.isSquare ? squareResolver(canvas.grid, canvas.dimensions.sceneRect).locate(point) : null
+    formatAddress, parseAddress, parseRange, formatRange, parseMajorRange, formatMajorRange,
+    resolveAt: (point) => canvas?.ready && canvas.grid?.isSquare
+      ? overlayResolver(canvas.grid, canvas.dimensions.sceneRect, service.read(canvas.scene)?.axes).locate(point) : null
   });
   const module = game.modules.get(MODULE_ID);
   if (module) module.api = exposed;

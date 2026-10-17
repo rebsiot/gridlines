@@ -1,5 +1,5 @@
-import {parseRange, normalizeRange, formatRange, squareResolver} from "./coordinates.js";
-import {geometrySnapshot, alignmentStatus, addFill, addNamedRange} from "./model.js";
+import {parseRange, normalizeRange, formatRange, overlayResolver, parseMajorRange, formatMajorRange} from "./coordinates.js";
+import {geometrySnapshot, alignmentStatus, addFill, addNamedRange, normalizeAxes, validateAxes, overlayGeometryChanged} from "./model.js";
 
 const uid = () => globalThis.crypto?.randomUUID?.() ?? foundry.utils.randomID();
 
@@ -35,7 +35,9 @@ export class GridlinesPanel {
     this.overlay = overlay;
     this.visible = false;
     this.selection = null;
-    this.inputs = {color: "#2563eb", opacity: "25", name: "", go: "", major: "5", labels: true};
+    this.inputs = {color: "#2563eb", opacity: "25", name: "", go: ""};
+    this.axesDraft = null;
+    this.draftSceneId = null;
     this.preservePreview = null;
     this.statusText = "";
   }
@@ -46,6 +48,9 @@ export class GridlinesPanel {
     // A closed panel must never leave an invisible click-catching overlay active.
     this.overlay.setSelecting(false);
     this.visible = false;
+    this.axesDraft = null;
+    this.draftSceneId = null;
+    this.overlay.setPreviewAxes?.(null);
     this.root?.remove(); this.root = null;
   }
   toggle() { this.visible ? this.close() : this.open(); }
@@ -74,10 +79,11 @@ export class GridlinesPanel {
   }
   validateRange(range) {
     const rect = canvas.dimensions.sceneRect;
-    const resolver = squareResolver(canvas.grid, rect);
-    const first = resolver.bounds(range.from);
-    const last = resolver.bounds(range.to);
-    if (first.right <= rect.x || first.bottom <= rect.y || last.x >= rect.x + rect.width || last.y >= rect.y + rect.height) throw new Error("Coordinate is outside this Scene");
+    const state = this.service.read(this.scene);
+    const resolver = overlayResolver(canvas.grid, rect, state?.axes);
+    const box = resolver.rangeBounds(range);
+    if (box.right <= rect.x || box.bottom <= rect.y || box.x >= rect.x + rect.width || box.y >= rect.y + rect.height)
+      throw new Error("Coordinate is outside this Scene");
     return range;
   }
   async go(value) {
@@ -86,11 +92,17 @@ export class GridlinesPanel {
     if (alignmentStatus(state, geometrySnapshot(this.scene)).pending) throw new Error("Resolve the grid alignment warning first");
     const target = String(value || "").trim();
     const named = state.namedRanges.find(n => n.name.toLocaleLowerCase() === target.toLocaleLowerCase());
-    const range = this.validateRange(named?.range ?? parseRange(target));
-    const resolver = squareResolver(canvas.grid, canvas.dimensions.sceneRect);
+    const axes = normalizeAxes(state.axes);
+    const query = target.toLowerCase().startsWith("cell:") ? target.slice(5).trim() : target;
+    const exactCell = target.toLowerCase().startsWith("cell:");
+    const range = this.validateRange(named?.range ?? (exactCell || axes.coordinateScope === "cell"
+      ? parseRange(query) : parseMajorRange(query, axes.majorEvery)));
+    const resolver = overlayResolver(canvas.grid, canvas.dimensions.sceneRect, axes);
     this.overlay.setSelection(range);
-    const center = resolver.centerOfRange(range);
-    await canvas.animatePan({x: center.x, y: center.y, duration: 350});
+    const box = resolver.rangeBounds(range), rect = canvas.dimensions.sceneRect;
+    const x0 = Math.max(box.x, rect.x), x1 = Math.min(box.right,rect.x+rect.width);
+    const y0 = Math.max(box.y, rect.y), y1 = Math.min(box.bottom,rect.y+rect.height);
+    await canvas.animatePan({x:(x0+x1)/2,y:(y0+y1)/2,duration:350});
   }
 
   render() {
@@ -120,6 +132,7 @@ export class GridlinesPanel {
       return;
     }
     const pending = alignmentStatus(state, snapshot).pending;
+    if (this.draftSceneId !== scene.id) {this.axesDraft=null;this.draftSceneId=scene.id;this.overlay.setPreviewAxes(null);}
     if (pending) {
       const warning = node("div", root, undefined, "gridlines-warning");
       node("strong", warning, "Foundry grid alignment changed");
@@ -156,8 +169,97 @@ export class GridlinesPanel {
       return;
     }
     this.preservePreview = null;
+    if (!this.axesDraft) this.axesDraft = normalizeAxes(state.axes);
+    const savedAxes = normalizeAxes(state.axes);
+    const draft = this.axesDraft;
+    const options = node("details", root, undefined, "gridlines-section");
+    options.open = true;
+    node("summary", options, "Grid Setup — live preview");
+    node("p", options, "These settings change only Gridlines' visual overlay, not Foundry's native movement grid. Changes preview immediately; click Save to keep them.");
+    const settingsFields = node("div", options, undefined, "gridlines-actions");
+    const size = field("Overlay cell size (px; blank = Foundry)", "number", settingsFields, draft.cellSize == null ? "" : String(draft.cellSize));
+    size.min="10";size.max="2000";size.step="1";
+    size.placeholder=`Native ${canvas.grid.sizeX}px`;
+    const ox=field("Offset X (px)","number",settingsFields,String(draft.offsetX));
+    const oy=field("Offset Y (px)","number",settingsFields,String(draft.offsetY));
+    ox.min=oy.min="-20000";ox.max=oy.max="20000";ox.step=oy.step="1";
+    const major=field("Major axes every N cells", "number", settingsFields, String(draft.majorEvery));
+    major.min="1";major.max="200";major.step="1";
+    const divisions=field("Minor divisions per major", "number", settingsFields, String(draft.minorDivisions));
+    divisions.min="1";divisions.max="20";divisions.step="1";
+    const majorWidth=field("Major line width (px)","number", settingsFields, String(draft.majorWidth));
+    const minorWidth=field("Minor line width (px)","number", settingsFields, String(draft.minorWidth));
+    majorWidth.min=minorWidth.min=".25";majorWidth.max=minorWidth.max="20";majorWidth.step=minorWidth.step=".25";
+    const lineColor=field("Gridline color", "color", settingsFields, draft.color);
+    const lineAlpha=field("Gridline opacity %", "number", settingsFields, String(Math.round(draft.alpha*100)));
+    lineAlpha.min="0";lineAlpha.max="100";lineAlpha.step="1";
+    const scopeWrap=node("label",options,undefined,"gridlines-field");
+    node("span",scopeWrap,"Axis coordinate numbering");
+    const scope=node("select",scopeWrap);
+    for(const [v,label] of [["major","Major blocks: A, B, C / 1, 2, 3"],["cell","Absolute fine cells: A, K, U / 1, 11, 21"]]) {
+      const opt=node("option",scope,label);opt.value=v;
+    }
+    scope.value=draft.coordinateScope;
+    const labelRow=node("label",options,undefined,"gridlines-check");
+    const labels=node("input",labelRow);labels.type="checkbox";labels.checked=Boolean(draft.labels);
+    node("span",labelRow,"Show letters and numbers on MAJOR axes only");
+    const visibleRow=node("label",options,undefined,"gridlines-check");
+    const showLines=node("input",visibleRow);showLines.type="checkbox";showLines.checked=Boolean(draft.enabled);
+    node("span",visibleRow,"Show Gridlines guides");
+    const value=()=>({
+      ...this.axesDraft,
+      cellSize: size.value.trim()==="" ? null : Number(size.value),
+      offsetX: Number(ox.value), offsetY:Number(oy.value),
+      majorEvery:Number(major.value),minorDivisions:Number(divisions.value),
+      majorWidth:Number(majorWidth.value),minorWidth:Number(minorWidth.value),
+      color:lineColor.value,alpha:Number(lineAlpha.value)/100,
+      coordinateScope:scope.value,labels:labels.checked,enabled:showLines.checked
+    });
+    const onPreview=()=>{
+      try {
+        const next=validateAxes(value());
+        this.axesDraft=next;
+        this.overlay.setPreviewAxes(next); // Schedule redraw without Scene write or destroying input focus.
+        if (this.overlay.geometryPreviewPending) this.overlay.setSelecting(false);
+      } catch { /* Intermediate invalid numeric input: wait for complete value. */ }
+    };
+    for(const ctl of [size,ox,oy,major,divisions,majorWidth,minorWidth,lineColor,scope,labels,showLines,lineAlpha])
+      ctl.addEventListener(ctl.type==="checkbox"||ctl.tagName?.toLowerCase()==="select"?"change":"input",onPreview);
+    const locationAffected=()=>{
+      const next=validateAxes(value());
+      return overlayGeometryChanged(savedAxes,next,Number(canvas.grid.sizeX)) ||
+        savedAxes.majorEvery !== next.majorEvery || savedAxes.coordinateScope !== next.coordinateScope;
+    };
+    if (state.formats.length || state.namedRanges.length)
+      node("p",options,"This Scene already has formatted cells or named ranges. If you move or resize the overlay, their saved cell indices remain unchanged, but the highlighted map locations may shift. Back up the Scene/world before applying geometry or coordinate-label changes.");
+    const backupRow=node("label",options,undefined,"gridlines-check");
+    const backup=node("input",backupRow);backup.type="checkbox";
+    node("span",backupRow,"I have a recoverable backup and approve moving existing overlay locations if geometry changes");
+    const actions=node("div",options,undefined,"gridlines-actions");
+    button("Save Grid Setup",()=>this.run(async()=>{
+      const next=validateAxes(value());
+      if(locationAffected() && (state.formats.length || state.namedRanges.length) && !backup.checked)
+        throw new Error("Back up your Scene and confirm moving existing overlay locations first");
+      await this.service.edit(scene,state.revision,current=>{current.axes=next;});
+      this.axesDraft=null;
+      this.overlay.setPreviewAxes?.(null);
+      this.announce("Gridlines overlay setup saved");
+    }),actions);
+    button("Discard Preview",()=>{
+      this.axesDraft=null;
+      this.overlay.setPreviewAxes?.(null);
+      this.refresh();
+    },actions);
+    button("10 / 5 Defaults",()=>{
+      this.axesDraft={...this.axesDraft,majorEvery:10,minorDivisions:5,coordinateScope:"major"};
+      this.overlay.setPreviewAxes(this.axesDraft);
+      this.refresh();
+    },actions);
+    node("small",options,`Foundry native grid: ${canvas.grid.sizeX}px. Major axes default every 10 overlay cells; five subdivisions produce four interior minor lines. Gridline color, opacity, and thickness preview as you change them.`);
+
     const selectionTools = node("div", root, undefined, "gridlines-section gridlines-actions");
     button(this.overlay.selecting ? "Stop Selecting Cells" : "Select Cells on Map", () => this.run(() => {
+      if (this.overlay.geometryPreviewPending) throw new Error("Save or discard overlay geometry changes before selecting cells");
       if (!this.overlay.root) this.overlay.attach();
       if (!this.overlay.root) throw new Error("Gridlines overlay could not attach to Foundry's canvas; check the browser console");
       this.overlay.setSelecting(!this.overlay.selecting);
@@ -172,9 +274,13 @@ export class GridlinesPanel {
     go.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); navigate(); } });
     button("Go", navigate, navRow);
 
+    node("small", nav, draft.coordinateScope === "major"
+      ? "A1 refers to the first major block. Use cell:D3 for an exact small cell."
+      : "Existing Scene coordinates use individual cells (legacy mode). Use the new Major block labeling option in Grid Setup to change this.");
     const selection = node("div", root, undefined, "gridlines-section");
-    node("strong", selection, this.selection ? `Selected: ${formatRange(this.selection)}` : "No cells selected");
-    node("p", selection, "Use the Select Cells tool, then drag on the map. Switch back to Tokens to resume normal play.");
+    node("strong", selection, this.selection
+      ? `Selected fine cells: ${formatRange(this.selection)} · Major ${formatMajorRange(this.selection, savedAxes.majorEvery)}` : "No cells selected");
+    node("p", selection, "Drag across cells, then shade or name them. Major axes are labels for blocks; exact saved selections use fine-cell indices.");
     const settings = node("div", root, undefined, "gridlines-actions");
     const color = field("Fill", "color", settings, this.inputs.color);
     color.addEventListener("input", () => { this.inputs.color = color.value; });
@@ -208,25 +314,6 @@ export class GridlinesPanel {
       label.textContent = `${range.name} · ${formatRange(range.range)}`;
       button("Go", () => this.run(() => this.go(range.name)), item);
     }
-    const options = node("details", root, undefined, "gridlines-section");
-    node("summary", options, "Grid display settings");
-    const visibility = node("label", options, undefined, "gridlines-check");
-    const show = node("input", visibility); show.type = "checkbox"; show.checked = this.overlay.localVisible;
-    show.addEventListener("change", () => this.overlay.setVisible(show.checked));
-    node("span", visibility, "Show overlay on my screen");
-    const major = field("Major line every N cells", "number", options, String(state.axes?.majorEvery ?? 5));
-    major.min = "1"; major.max = "50";
-    const labelRow = node("label", options, undefined, "gridlines-check");
-    const labels = node("input", labelRow); labels.type = "checkbox"; labels.checked = Boolean(state.axes?.labels);
-    node("span", labelRow, "Display coordinate labels");
-    button("Save Display Settings", () => this.run(async () => {
-      const n = Number(major.value);
-      if (!Number.isInteger(n) || n < 1 || n > 50) throw new Error("Major interval must be between 1 and 50");
-      await this.service.edit(scene, state.revision, current => {
-        current.axes = {...current.axes, majorEvery: n, labels: labels.checked};
-      });
-      this.announce("Gridline display settings saved");
-    }), options);
     const footer = node("small", root, "Prototype: GM authoring only. All named locations are stored in Scene flags; do not enter GM secrets. No automation or player broadcast yet.", "gridlines-footer");
     if (this.statusText) { const note = node("small", root, this.statusText); note.className = "gridlines-status"; }
     void footer;

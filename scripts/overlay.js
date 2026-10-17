@@ -1,5 +1,5 @@
-import {squareResolver, normalizeRange, formatRange} from "./coordinates.js";
-import {alignmentStatus} from "./model.js";
+import {overlayResolver, normalizeRange, columnName} from "./coordinates.js";
+import {alignmentStatus, normalizeAxes, overlayGeometryChanged} from "./model.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const LIMIT_AXIS_LINES = 250;
@@ -25,6 +25,7 @@ export class GridlinesOverlay {
     this.selecting = false;
     this.localVisible = true;
     this.sceneState = null;
+    this.previewAxes = null;
     this.svg = null;
     this.root = null;
     this.resizeObserver = null;
@@ -96,11 +97,16 @@ export class GridlinesOverlay {
   }
 
   setSceneState(value) { this.sceneState = value; this.schedule(); }
+  setPreviewAxes(value) { this.previewAxes = value ? normalizeAxes(value) : null; this.schedule(); }
+  get axes() { return normalizeAxes(this.previewAxes ?? this.sceneState?.axes); }
+  get geometryPreviewPending() {
+    return this.previewAxes && this.sceneState && overlayGeometryChanged(this.sceneState.axes, this.previewAxes, Number(canvas.grid?.sizeX));
+  }
   setVisible(visible) { this.localVisible = Boolean(visible); this.schedule(); }
   setSelecting(active) {
     this.selecting = Boolean(active);
     if (!this.selecting) this.dragStart = null;
-    this.root?.classList.toggle("gridlines-selecting", this.selecting && !this.pending);
+    this.root?.classList.toggle("gridlines-selecting", this.selecting && !this.pending && !this.geometryPreviewPending);
     this.schedule();
   }
   setSelection(range) {
@@ -121,13 +127,13 @@ export class GridlinesOverlay {
   }
 
   pointFromEvent(event) {
-    if (!canvas.ready || !canvas.grid?.isSquare || this.pending) return null;
+    if (!canvas.ready || !canvas.grid?.isSquare || this.pending || this.geometryPreviewPending) return null;
     const point = canvas.canvasCoordinatesFromClient({x: event.clientX, y: event.clientY});
-    return squareResolver(canvas.grid, canvas.dimensions.sceneRect).locate(point);
+    return overlayResolver(canvas.grid, canvas.dimensions.sceneRect, this.axes).locate(point);
   }
 
   onDown(event) {
-    if (!this.selecting || this.pending || event.button !== 0) return;
+    if (!this.selecting || this.pending || this.geometryPreviewPending || event.button !== 0) return;
     const cell = this.pointFromEvent(event);
     if (!cell) return;
     event.preventDefault();
@@ -176,10 +182,11 @@ export class GridlinesOverlay {
     this.svg.setAttribute("viewBox", `0 0 ${viewRect.width} ${viewRect.height}`);
     this.svg.replaceChildren();
     const state = this.sceneState;
-    this.root.classList.toggle("gridlines-selecting", this.selecting && !this.pending);
+    this.root.classList.toggle("gridlines-selecting", this.selecting && !this.pending && !this.geometryPreviewPending);
     if (!this.localVisible || !state || !canvas.ready || !canvas.grid?.isSquare || viewRect.width < 1 || viewRect.height < 1) return;
     const sceneRect = canvas.dimensions.sceneRect;
-    const resolver = squareResolver(canvas.grid, sceneRect);
+    const axes = this.axes;
+    const resolver = overlayResolver(canvas.grid, sceneRect, axes);
     const toScreen = p => {
       const screen = canvas.clientCoordinatesFromCanvas(p);
       return {x: screen.x - viewRect.left, y: screen.y - viewRect.top};
@@ -188,37 +195,62 @@ export class GridlinesOverlay {
     const viewportB = canvas.canvasCoordinatesFromClient({x: viewRect.right, y: viewRect.bottom});
     const visibleWorld = clipBounds({x: Math.min(viewportA.x, viewportB.x), y: Math.min(viewportA.y, viewportB.y), right: Math.max(viewportA.x, viewportB.x), bottom: Math.max(viewportA.y, viewportB.y)}, sceneRect);
     if (!visibleWorld) return;
-    const origin = resolver.bounds({row: 0, col: 0});
-    const dx = canvas.grid.sizeX, dy = canvas.grid.sizeY;
-    const firstCol = Math.max(0, Math.floor((visibleWorld.x - origin.x) / dx) - 1);
-    const lastCol = Math.max(0, Math.ceil((visibleWorld.right - origin.x) / dx) + 1);
-    const firstRow = Math.max(0, Math.floor((visibleWorld.y - origin.y) / dy) - 1);
-    const lastRow = Math.max(0, Math.ceil((visibleWorld.bottom - origin.y) / dy) + 1);
+    const origin = resolver.origin;
+    const size = resolver.size;
     const status = this.pending;
-    const clipped = clipBounds({x: origin.x, y: origin.y, right: sceneRect.x + sceneRect.width, bottom: sceneRect.y + sceneRect.height}, sceneRect);
-    if (!clipped) return;
-    const axes = state.axes;
-    if (axes?.enabled && lastCol - firstCol <= LIMIT_AXIS_LINES && lastRow - firstRow <= LIMIT_AXIS_LINES) {
-      const minor = [], major = [];
-      const top = toScreen({x: visibleWorld.x, y: visibleWorld.y});
-      const bottom = toScreen({x: visibleWorld.right, y: visibleWorld.bottom});
-      const step = Math.max(1, Math.min(50, Number(axes.majorEvery) || 5));
-      for (let c = firstCol; c <= lastCol; c++) {
-        const x = origin.x + c * dx;
-        if (x < visibleWorld.x || x > visibleWorld.right) continue;
-        const px = toScreen({x, y: visibleWorld.y}).x;
-        (c % step === 0 ? major : minor).push(`M${px.toFixed(2)} ${top.y.toFixed(2)}V${bottom.y.toFixed(2)}`);
+    const screenA = toScreen({x: visibleWorld.x, y: visibleWorld.y});
+    const screenB = toScreen({x: visibleWorld.right, y: visibleWorld.bottom});
+    // All guides are calculated from the same preview-aware origin/spacing as
+    // hit-testing, formatted cell bounds, and named range navigation.
+    if (axes.enabled) {
+      const step = size * axes.majorEvery / axes.minorDivisions;
+      const xMin = Math.max(0, Math.ceil((visibleWorld.x - origin.x) / step - 1e-9));
+      const xMax = Math.floor((visibleWorld.right - origin.x) / step + 1e-9);
+      const yMin = Math.max(0, Math.ceil((visibleWorld.y - origin.y) / step - 1e-9));
+      const yMax = Math.floor((visibleWorld.bottom - origin.y) / step + 1e-9);
+      if (xMax - xMin <= LIMIT_AXIS_LINES && yMax - yMin <= LIMIT_AXIS_LINES) {
+        const minor = [], major = [];
+        for (let n = xMin; n <= xMax; n++) {
+          const x = origin.x + n * step;
+          const p = toScreen({x, y:visibleWorld.y});
+          (n % axes.minorDivisions === 0 ? major : minor).push(`M${p.x.toFixed(2)} ${screenA.y.toFixed(2)}V${screenB.y.toFixed(2)}`);
+        }
+        for (let n = yMin; n <= yMax; n++) {
+          const y = origin.y + n * step;
+          const p = toScreen({x:visibleWorld.x, y});
+          (n % axes.minorDivisions === 0 ? major : minor).push(`M${screenA.x.toFixed(2)} ${p.y.toFixed(2)}H${screenB.x.toFixed(2)}`);
+        }
+        if (minor.length) this.svg.append(svgElement("path", {class: "gridlines-minor-axes", d:minor.join(" "), fill:"none", stroke:axes.color,
+          "stroke-width":axes.minorWidth, "stroke-opacity":axes.alpha * .55}));
+        if (major.length) this.svg.append(svgElement("path", {class: "gridlines-major-axes", d:major.join(" "), fill:"none", stroke:axes.color,
+          "stroke-width":axes.majorWidth, "stroke-opacity":axes.alpha}));
+        // Headings label ONLY major axes: 10 cells/axis and 5 minor divisions
+        // by default. Existing v0.1.1 Scenes keep absolute-cell labels to
+        // avoid silently changing their previously established coordinates.
+        if (axes.labels) {
+          const firstMajorX = Math.max(0, Math.ceil((visibleWorld.x - origin.x)/(size * axes.majorEvery) - 1e-9));
+          const lastMajorX = Math.floor((visibleWorld.right - origin.x)/(size * axes.majorEvery) + 1e-9);
+          const firstMajorY = Math.max(0, Math.ceil((visibleWorld.y - origin.y)/(size * axes.majorEvery) - 1e-9));
+          const lastMajorY = Math.floor((visibleWorld.bottom - origin.y)/(size * axes.majorEvery) + 1e-9);
+          const screenStep = Math.abs(toScreen({x:origin.x + size * axes.majorEvery,y:origin.y}).x - toScreen({x:origin.x,y:origin.y}).x);
+          if (screenStep > 40) {
+            for (let majorCol = firstMajorX; majorCol <= lastMajorX && majorCol - firstMajorX <= 80; majorCol++) {
+              const atX = origin.x + majorCol * axes.majorEvery * size;
+              const at = toScreen({x:atX, y:visibleWorld.y});
+              const lbl = svgElement("text", {x:at.x + 8, y:screenA.y + 15, class:"gridlines-axis-label", "text-anchor":"start"});
+              lbl.textContent = axes.coordinateScope === "major" ? columnName(majorCol) : columnName(majorCol*axes.majorEvery);
+              this.svg.append(lbl);
+            }
+            for (let majorRow = firstMajorY; majorRow <= lastMajorY && majorRow - firstMajorY <= 80; majorRow++) {
+              const atY = origin.y + majorRow * axes.majorEvery * size;
+              const at = toScreen({x:visibleWorld.x, y:atY});
+              const lbl = svgElement("text", {x:screenA.x + 6, y:at.y + 27, class:"gridlines-axis-label", "text-anchor":"start"});
+              lbl.textContent = String(1 + (axes.coordinateScope === "major" ? majorRow : majorRow*axes.majorEvery));
+              this.svg.append(lbl);
+            }
+          }
+        }
       }
-      for (let r = firstRow; r <= lastRow; r++) {
-        const y = origin.y + r * dy;
-        if (y < visibleWorld.y || y > visibleWorld.bottom) continue;
-        const py = toScreen({x: visibleWorld.x, y}).y;
-        (r % step === 0 ? major : minor).push(`M${top.x.toFixed(2)} ${py.toFixed(2)}H${bottom.x.toFixed(2)}`);
-      }
-      const color = /^#[0-9a-f]{6}$/i.test(axes.color) ? axes.color : "#65baff";
-      const alpha = Math.min(1, Math.max(0, Number(axes.alpha ?? .65)));
-      if (minor.length) this.svg.append(svgElement("path", {d: minor.join(" "), fill: "none", stroke: color, "stroke-width": "1", "stroke-opacity": alpha * .45}));
-      if (major.length) this.svg.append(svgElement("path", {d: major.join(" "), fill: "none", stroke: color, "stroke-width": "2", "stroke-opacity": alpha}));
     }
 
     if (status) return; // Never show stale formatting against changed native coordinates.
@@ -242,21 +274,6 @@ export class GridlinesOverlay {
         const a = toScreen({x: box.x, y: box.y});
         const b = toScreen({x: box.right, y: box.bottom});
         this.svg.append(svgElement("rect", {x: a.x, y: a.y, width: Math.max(0, b.x - a.x), height: Math.max(0, b.y - a.y), fill: "#3b82f6", "fill-opacity": .15, stroke: "#60a5fa", "stroke-width": 2}));
-      }
-    }
-    if (axes?.enabled && axes?.labels && dx > 0 && dy > 0 && lastCol - firstCol < 30 && lastRow - firstRow < 30) {
-      const screenCellWidth = dx * (toScreen({x: visibleWorld.x + 1, y: visibleWorld.y}).x - toScreen({x: visibleWorld.x, y: visibleWorld.y}).x);
-      if (screenCellWidth > 30) {
-        // Labels appear along the topmost visible row to avoid cluttering battlemaps.
-        const row = Math.max(0, firstRow);
-        for (let col = firstCol; col < lastCol; col++) {
-          const center = resolver.center({row, col});
-          if (center.x < visibleWorld.x || center.x > visibleWorld.right) continue;
-          const pos = toScreen(center);
-          const label = svgElement("text", {x: pos.x, y: pos.y - dy * .23, "text-anchor": "middle", class: "gridlines-axis-label"});
-          label.textContent = formatRange({from: {row, col}, to: {row, col}});
-          this.svg.append(label);
-        }
       }
     }
   }

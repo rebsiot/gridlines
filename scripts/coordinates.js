@@ -99,3 +99,69 @@ export function squareResolver(grid, sceneRect) {
     }
   };
 }
+
+
+/** G03 overlay grid, separate from Foundry's native movement/snap grid.
+ * Uses native cell geometry as its unchanged default, while allowing GM-only
+ * overlay pixel spacing and origin offsets without mutating Foundry Scene grid.
+ * Returns the same interface as squareResolver for all consumers.
+ */
+export function overlayResolver(grid, sceneRect, axes = {}) {
+  const native = squareResolver(grid, sceneRect);
+  const base = native.bounds({row: 0, col: 0});
+  const size = axes.cellSize == null ? Number(grid.sizeX) : Number(axes.cellSize);
+  const offsetX = Number(axes.offsetX ?? 0);
+  const offsetY = Number(axes.offsetY ?? 0);
+  if (!Number.isFinite(size) || size < 10 || size > 2000 ||
+      !Number.isFinite(offsetX) || !Number.isFinite(offsetY) ||
+      Math.abs(offsetX) > 20000 || Math.abs(offsetY) > 20000) {
+    throw new Error("Invalid Gridlines overlay size or offset");
+  }
+  const origin = {x: base.x + offsetX, y: base.y + offsetY};
+  const inside = native.inside;
+  const bounds = ({row, col}) => {
+    if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0 || row > MAX_INDEX || col > MAX_INDEX)
+      throw new Error("Invalid Gridlines cell");
+    const x = origin.x + col * size;
+    const y = origin.y + row * size;
+    return {x, y, right: x + size, bottom: y + size};
+  };
+  const locate = p => {
+    if (!inside(p)) return null;
+    const row = Math.floor((p.y - origin.y) / size);
+    const col = Math.floor((p.x - origin.x) / size);
+    if (row < 0 || col < 0 || row > MAX_INDEX || col > MAX_INDEX) return null;
+    return {row, col};
+  };
+  const rangeBounds = range => {
+    const r = normalizeRange(range.from, range.to);
+    const a = bounds(r.from), b = bounds(r.to);
+    return {x: a.x, y: a.y, right: b.right, bottom: b.bottom};
+  };
+  return {
+    origin, size, locate, inside, bounds, rangeBounds,
+    vertices: c => {
+      const b = bounds(c);
+      return [{x:b.x,y:b.y},{x:b.right,y:b.y},{x:b.right,y:b.bottom},{x:b.x,y:b.bottom}];
+    },
+    center: c => {const b = bounds(c); return {x:(b.x+b.right)/2,y:(b.y+b.bottom)/2};},
+    centerOfRange: range => {const b = rangeBounds(range); return {x:(b.x+b.right)/2,y:(b.y+b.bottom)/2};}
+  };
+}
+
+
+/** Major block references: A1 covers majorEvery x majorEvery fine cells.
+ * Saved formatting and named ranges retain fine-cell indices. */
+export function parseMajorRange(text, majorEvery) {
+  if (!Number.isInteger(majorEvery) || majorEvery < 1) throw new Error("Invalid major interval");
+  const r = parseRange(text);
+  const from = {row: r.from.row * majorEvery, col: r.from.col * majorEvery};
+  const to = {row: (r.to.row + 1)*majorEvery - 1, col: (r.to.col + 1)*majorEvery - 1};
+  return normalizeRange(from, to);
+}
+
+export function formatMajorRange(range, majorEvery) {
+  const r = normalizeRange(range.from, range.to);
+  return formatRange({from:{row:Math.floor(r.from.row/majorEvery),col:Math.floor(r.from.col/majorEvery)},
+    to:{row:Math.floor(r.to.row/majorEvery),col:Math.floor(r.to.col/majorEvery)}});
+}

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.2 — 2026-10-17 (experimental alpha)
+
+- Added editable **overlay cell size (px)** and **X/Y offsets**. These affect Gridlines visuals, selections and Go To positions, not the native Foundry movement grid.
+- Fixed missing gridline **color, opacity and stroke-width controls**. They preview instantly without writing Scene data; Save Grid Setup commits the settings.
+- New Scene defaults: **10 fine cells per major axis**, with **5 minor divisions** (four interior minor guide lines), and coordinate labels only on major axes.
+- Added major-block Go To addressing on new Scenes; `cell:` prefix navigates exact fine cells. Existing v0.1.1 Scenes retain their stored fine-cell coordinate convention and major intervals until deliberately changed.
+- Keeps named-range IDs, formatting data, module ID `gridlines` and existing Scene flags. Changes that could relocate saved content require a backup acknowledgment before saving.
+- Automated Node/mock tests and ZIP audit: see `TESTING.md`. Live Foundry v14 verification not yet performed.
+- Upgrade via the stable manifest; retain an earlier ZIP and a test-world snapshot for rollback.
+
+
 ## 0.1.1 — 2026-10-17 (experimental alpha)
 
 - Fixed manifest-install packaging: `module.json` is at the ZIP root, preventing an extra `gridlines/` directory during extraction.

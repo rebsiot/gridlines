@@ -6,7 +6,39 @@ export const SCHEMA_VERSION = 1;
 const MAX_RANGES = 500;
 const MAX_FORMATS = 1000;
 
-export const DEFAULT_AXES = Object.freeze({ enabled: true, labels: true, majorEvery: 5, color: "#65baff", alpha: .65 });
+export const DEFAULT_AXES = Object.freeze({
+  enabled: true, labels: true, majorEvery: 10, minorDivisions: 5,
+  cellSize: null, offsetX: 0, offsetY: 0,
+  color: "#65baff", alpha: .65, majorWidth: 2, minorWidth: 1, coordinateScope: "major"
+});
+
+/** Optional axis fields maintain v0.1.1 Scene flags without a migration. */
+export function normalizeAxes(value = {}) {
+  const prior = (value && Object.keys(value).length > 0 && value.coordinateScope === undefined);
+  return {...DEFAULT_AXES, ...(value ?? {}), ...(prior ? {coordinateScope: "cell"} : {})};
+}
+
+export function validateAxes(value) {
+  const a = normalizeAxes(value);
+  const integer = (x, min, max) => Number.isInteger(x) && x >= min && x <= max;
+  const finite = (x, min, max) => typeof x === "number" && Number.isFinite(x) && x >= min && x <= max;
+  if (!["major", "cell"].includes(a.coordinateScope)) throw new Error("Invalid coordinate labeling mode");
+  if (!integer(a.majorEvery, 1, 200) || !integer(a.minorDivisions, 1, 20))
+    throw new Error("Major interval must be 1–200 cells, minor divisions 1–20");
+  if (!(a.cellSize === null || finite(a.cellSize, 10, 2000))) throw new Error("Gridlines cell size must be 10–2000 pixels");
+  if (!finite(a.offsetX, -20000, 20000) || !finite(a.offsetY, -20000, 20000)) throw new Error("Gridlines offset is outside the supported range");
+  if (!/^#[0-9a-f]{6}$/i.test(a.color)) throw new Error("Invalid gridline color");
+  if (!finite(a.alpha, 0, 1) || !finite(a.majorWidth, .25, 20) || !finite(a.minorWidth, .25, 20))
+    throw new Error("Invalid gridline opacity or line width");
+  return a;
+}
+
+export function overlayGeometryChanged(before, after, nativeSize) {
+  const a = normalizeAxes(before), b = normalizeAxes(after);
+  const effective = x => x.cellSize ?? nativeSize;
+  return effective(a) !== effective(b) || a.offsetX !== b.offsetX || a.offsetY !== b.offsetY;
+}
+
 
 /** Only geometry-affecting fields are fingerprinted. Grid color/distance should not trigger a review. */
 export function geometrySnapshot(scene) {
@@ -54,6 +86,7 @@ export function validateState(value) {
   }
   if (!Number.isInteger(value.revision) || value.revision < 1 || !Number.isInteger(value.geometryRevision) || value.geometryRevision < 1) throw new Error("Invalid Gridlines revision");
   if (value.formats.length > MAX_FORMATS || value.namedRanges.length > MAX_RANGES) throw new Error("Gridlines Scene data exceeds the prototype limits");
+  validateAxes(value.axes);
   return value;
 }
 

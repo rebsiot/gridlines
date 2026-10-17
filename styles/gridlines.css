@@ -22,8 +22,8 @@
   position: fixed;
   top: 105px;
   right: 335px;
-  width: 290px;
-  max-height: min(75vh, 680px);
+  width: 355px;
+  max-height: min(82vh, 850px);
   overflow: auto;
   z-index: 120;
   padding: 12px;
@@ -81,5 +81,16 @@
 .gridlines-panel small { display: block; font-size: 11px; opacity: .85; line-height: 1.35; margin-top: 8px; }
 .gridlines-panel .gridlines-status { color: #a3d9b0; }
 @media (max-width: 850px) {
-  .gridlines-panel { right: 12px; top: 75px; width: min(290px, calc(100vw - 30px)); }
+  .gridlines-panel { right: 12px; top: 75px; width: min(355px, calc(100vw - 30px)); }
 }
+
+.gridlines-panel select {
+  min-height: 30px;
+  padding: 5px;
+  color: inherit;
+  background: var(--color-cool-5-90, #222831);
+  border: 1px solid #8a939e;
+  border-radius: 4px;
+  width: 100%;
+}
+.gridlines-panel .gridlines-field input[type="number"] { width: 100%; }

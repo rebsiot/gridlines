@@ -1,32 +1,25 @@
-# Gridlines 0.1.1 - Prototype verification
+# Gridlines v0.1.2 — Test report
 
-**Additional local checks:** `module.json` appears at ZIP root; no duplicate module folder; native Token Controls launcher is GM-only; manager has manual select/stop controls; source syntax checks and Node mock tests. Native Foundry v14 live behavior is **unverified**.
+**Source:** exact prior GitHub branch `rebsiot/gridlines` at `c05920e25e700e425449497ee849cce7c85e8f1c`; new local code built in separate directory. Not deployed.
 
-# Gridlines - Prototype verification
+**Local automated/mock tests:** 18 Node tests passed locally on 2026-10-17, covering syntax and mock workflows. Node syntax, pure coordinate/label logic, overlay pixel size/offset mapping, in-memory Scene flag persistence, native resize warning, live-style preview mock, 10/5 major/minor SVG rendering, existing v0.1.1 flag compatibility, and explicit backup confirmation for relocating saved cells. Run `npm test` or `node --test tests/*.test.mjs`.
 
-## Evidence summary
+**ZIP audit:** Validate the package with `unzip -t`; `module.json` is at the ZIP root and its `id` and `version` match the manifest path and download filename. Verify no secrets or paid art included.
 
-- Source: created from scratch for this prototype, not derived from an existing verified working G03 ZIP or deployed source.
-- Target: Foundry VTT v14, installed patch version **unknown**.
-- Native Foundry integration: API documentation reviewed; actual Scene Controls, canvas DOM positioning, Scene flags and render cycle **not exercised live**.
-- Node automated tests: run with `node --test tests/*.test.mjs` from the module folder (results must be verified for the exact supplied artifact).
-- ZIP integrity: inspect files and run `unzip -t`.
-- Deployment: **not performed**.
+**Foundry v14 live tests:** Not yet performed. GM controls/canvas attachment may still differ in real Foundry; no player/fog/multi-GM verification was conducted.
 
-## Recommended single first live check
+## One first live check
 
-In a separate test world using the actual installed Foundry v14 build, enable the module, open a square-grid Scene, click Gridlines -> Gridlines Manager -> Enable on this Scene, then confirm grid lines are visible and aligned before creating any ranges. Record Foundry build, browser, errors and screenshots. Do not proceed to authoring or native grid changes if this fails.
+On a test Scene, enable Gridlines v0.1.2, open Token Controls → Gridlines: Open Manager → Enable on this Scene. Under Grid Setup, adjust **Gridline color** and **Gridline opacity %**, watching for an immediate change in visible SVG guides, then try a small **Offset X** change and **Discard Preview**. Confirm native Foundry grid and objects did not change. Report Foundry v14 build and any console error if the overlay is missing.
 
-## Further test sequence (not yet run)
+## Further regressions
 
-1. Select D3:F5 on the canvas; confirm correct address, normal Token control after switching out of select.
-2. Shade and name Warehouse, reload Scene; confirm the Scene `flags.gridlines.state` contains only the Gridlines data.
-3. Navigate to Warehouse, compare center with the expected cells.
-4. Take a *separate world snapshot*, change the native Scene grid size in Foundry Scene Configuration, observe warning and pause.
-5. Preview preserve-map versus keep-cell-addresses; do not apply unexpected remapping.
-6. Confirm acceptance persists on refresh without moving existing objects.
-7. Test two GM clients, one player client, grid-type change, fog of war, canvas zoom/pan, drawing compatibility, and large/rotated Scenes before a public release.
+- Save overlay size/offset, reload and check visual matching with named ranges.
+- Change major spacing and subdivisions, verify labels on major lines only.
+- Test `A1`/`B2` major Go To and `cell:D3` exact Go To on a new Scene; verify v0.1.1 Scene addresses remain legacy.
+- Create and shade a named range, then attempt offset change: preview should work but Save must reject without backup confirmation.
+- Use native Foundry Scene Configuration to change grid pixel size; review must appear and stale range navigation remain paused.
+- Test zoom/pan, differing map pixel dimensions, fog-of-war visibility, two GMs, rollback and module enablement after an actual Foundry install.
 
-## Backups and non-goals
+**Safety:** There is no migration of world data, Actor, Token, Tile, Region, Drawing or Foundry native grid settings. Flags `gridlines.state` remain and require a world snapshot to restore after user-authored Scene edits. Store no GM secrets in Scene flags.
 
-Never test alignment on an irreplaceable live Scene. Back up the entire test world if changing its native Scene grid. A module ZIP does not back up world data, and disabling the module does not remove Scene flags. No current Pro automation is shipped.
