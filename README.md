@@ -1,14 +1,16 @@
-# Gridlines - Experimental Alpha
+# AFT Gridlines+ — Experimental Alpha
 
-Gridlines helps a GM identify, shade, and name map cells without adding Tiles, Drawings, or Regions. It draws over **Foundry's existing square Scene grid**. You can set a separate visual cell size and X/Y offset for Gridlines, without altering Foundry token snapping, walls, map objects or movement distances.
+AFT Gridlines+ helps a GM identify, shade, and name map cells without adding Tiles, Drawings, or Regions. It draws over **Foundry's existing square Scene grid**. You can set a separate visual cell size and X/Y offset for Gridlines, without altering Foundry token snapping, walls, map objects or movement distances.
 
-**Status: v0.1.4 experimental alpha, available through the GitHub-hosted manifest. Not live-tested in Foundry.** This is not an official Foundry package listing or stable release. Install only in a backed-up test world.
+**Status: v0.1.5 experimental alpha, available through the GitHub-hosted manifest. Not live-tested in Foundry.** This is not an official Foundry package listing or stable release. Install only in a backed-up test world.
+
+**v0.1.5 changes:** The module appears as **AFT Gridlines+** in Foundry Setup and **Manage Modules**. Its existing enable/disable checkbox still reflects whether Foundry has enabled it for the current world. The technical module ID stays `gridlines` and existing Scene settings are preserved.
 
 **v0.1.4 changes:** Drag the overlay itself to align it, then optionally choose which fine cell starts the major **A1** block. Dragging changes only the previewed X/Y offsets; picking A1 changes only its coordinate origin and where major axes begin. These actions do not change Foundry's native grid or write Scene documents until **Save Grid Setup**.
 
 ## First use: drag the grid and choose A1
 
-1. As GM, open a backed-up test world's square-grid Scene. Select **Token Controls → Gridlines: Open Manager** and **Enable on this Scene** if needed.
+1. As GM, open a backed-up test world's square-grid Scene. Select **Token Controls → AFT Gridlines+: Open Manager** and **Enable on this Scene** if needed.
 2. In **Grid Setup — live preview**, click **Drag Grid**. Grab the map and move the overlay until its lines match the map image. The temporary amber **A1** area moves along with it. Release to preview the X/Y offsets.
 3. **Optional:** Click **Pick A1 Cell**, then click the *fine cell whose top-left corner should begin major block A1*. Gridlines redraws its major axes and numbering from that cell. For a 10-cell major interval, A1 includes that cell and the next nine fine cells in each direction. This does not change the underlying cell size.
 4. Verify the orange A1 marker and the alphabetic/numeric major labels. Click **Save Grid Setup** to persist the position and A1 selection, or **Discard Preview** to revert. Escape exits a placement mode and cancels any drag in progress.
@@ -20,7 +22,7 @@ No Drawing, Tile, Region, token movement, or native Foundry Scene grid update is
 
 ## Get started: draw a 10x10 guide to align a map
 
-1. In a backed-up test world, install/enable the module. As GM, open a native square-grid Scene and choose **Token Controls → Gridlines: Open Manager → Enable on this Scene**.
+1. In a backed-up test world, install/enable the module. As GM, open a native square-grid Scene and choose **Token Controls → AFT Gridlines+: Open Manager → Enable on this Scene**.
 2. Expand **Grid Setup — live preview** and click **Draw 10x10 Guide**. If the map has a smaller clear reference, use **Draw 5x5 Guide** or **Draw 1x1 Guide** instead.
 3. Drag from one printed grid intersection to another **10 cells away horizontally or vertically**, or drag from one corner of a printed **10×10 cell square** to its opposite corner. The temporary amber guide appears while dragging. Release to calculate the cell pixel size and alignment offsets.
 4. Inspect the preview. For a one-axis line, draw another line on the other axis if needed (the last measurement sets the shared square cell size). If the print appears stretched rather than square, correct the map image outside Gridlines; this alpha does not independently stretch X and Y cell dimensions.
@@ -41,7 +43,7 @@ For newly enabled Scenes, `A1` means the first **major block** (10 × 10 fine ce
 ## Get started: shade and name a map location
 
 1. **Back up your Foundry test world first.** Install and enable this module in a **test world**, not your active campaign.
-2. Open a Scene that uses a native **square grid**. As GM, choose **Token Controls** (person icon, left) and click **Gridlines: Open Manager** in its tool palette. A separate **Gridlines** Scene Control may also be available.
+2. Open a Scene that uses a native **square grid**. As GM, choose **Token Controls** (person icon, left) and click **AFT Gridlines+: Open Manager** in its tool palette. A separate **Gridlines** Scene Control may also be available.
 3. Click **Enable on this Scene**. The overlay follows the native grid size until you set a custom size or offset. Nothing changes Foundry native grid settings.
 4. Click **Select Cells on Map** in the manager. Drag across a rectangular selection, such as D3:F5. In the floating Gridlines panel, choose a color and click **Shade Selection**.
 5. Enter `Warehouse` under **Named Ranges** and click **Save Name**. Search `Warehouse` under **Go To** to pan to that saved area. New Scenes use major-block addresses (such as `A1`) for ordinary Go To, and `cell:D3` for exact cells. Reload the Scene to check persistence.

@@ -168,13 +168,13 @@ export class GridlinesPanel {
     if (!this.root) {
       this.root = node("section", document.body, undefined, "gridlines-panel");
       this.root.setAttribute("role", "region");
-      this.root.setAttribute("aria-label", "Gridlines manager");
+      this.root.setAttribute("aria-label", "AFT Gridlines+ manager");
     }
     const root = this.root;
     root.replaceChildren();
     const header = node("div", root, undefined, "gridlines-panel-header");
-    node("strong", header, "Gridlines");
-    button("×", () => this.close(), header, {title: "Close Gridlines manager"});
+    node("strong", header, "AFT Gridlines+");
+    button("×", () => this.close(), header, {title: "Close AFT Gridlines+ manager"});
     const scene = this.scene;
     if (!scene) { node("p", root, "Open a Scene to use Gridlines."); return; }
     if (!canvas.grid?.isSquare) { node("p", root, "This prototype supports only native square grids. No Scene data was changed."); return; }

@@ -1,4 +1,15 @@
-# Gridlines v0.1.4 — test report
+# AFT Gridlines+ v0.1.5 — test report
+
+**Owner:** G03 — Gridlines, technical ID `gridlines`. **Verified source input:** GitHub `rebsiot/gridlines` commit `9a582daa371372979e34ee045cb82b732b9e84f0`, exactly matching the local v0.1.4 ZIP (Git blob SHA `587736260c021c3919cccfd4f29af46b81fcad7c`). The actual installed version on the user's Foundry instance has not been inspected.
+
+## v0.1.5 change and checks (2026-10-18)
+
+- Visible Foundry manifest title, Token Controls launcher, dedicated Scene Control, and manager heading now read **AFT Gridlines+**. Internal identifiers, hooks, stored Scene flags, settings and alignment behavior remain unchanged.
+- Run `npm test`, `node --check` for scripts/tests, compare source-to-ZIP contents, verify `module.json` at ZIP root, and check the manifest/download links and Git object hashes after publication.
+- **Real Foundry v14 smoke test not run:** In a backed-up test world, update the module, open **Manage Modules** and verify **AFT Gridlines+** appears with its enabled checkbox checked or unchecked according to the world's actual current state. Confirm the native Token Controls launcher and manager title. This package does not enable itself or other AFT modules.
+- **Rollback:** Restore the previously downloaded v0.1.4 package/module folder, and refresh the world; no data migration in v0.1.5. Retain an independent world backup in case unrelated world changes need reversal.
+
+## Previous v0.1.4 validation (unchanged functionality)
 
 **Component:** G03 — Gridlines; Foundry module ID `gridlines`; owner thread: G03 current development conversation.
 

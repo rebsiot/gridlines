@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.5 — 2026-10-18 (experimental alpha)
+
+- Renamed the Foundry package title to **AFT Gridlines+** so it sorts and identifies consistently in Setup and Manage Modules; the native Foundry checkbox continues to show whether it is enabled in that world.
+- Updated the Token Controls launcher, Gridlines Scene Control title, and manager heading to match the new display name.
+- Preserved immutable module ID `gridlines`, install folder, GitHub repository, manifest URL, Scene flags, existing range/format IDs, and all grid alignment behavior. No Scene migration or enabling/disabling of modules occurs.
+- Install/update from the existing manifest after backing up the module folder/test world, then reload the world and confirm the name and enabled status. Rollback to the retained v0.1.4 ZIP if necessary; Scene flags remain unchanged by this release.
+- Tested with local Node/mock checks and package ZIP audit. **Live Foundry v14 testing has not been performed.**
+
 ## 0.1.4 — 2026-10-18 (experimental alpha)
 
 - Added **Drag Grid**. Click the mode, drag anywhere on the Scene and release to preview new X/Y offsets; the A1 guide moves with the overlay. The dragging gesture cannot write Scene data.

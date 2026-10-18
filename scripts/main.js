@@ -54,7 +54,7 @@ Hooks.on("getSceneControlButtons", controls => {
     controls.tokens.tools.gridlinesManager = {
       name: "gridlinesManager",
       order: Object.keys(controls.tokens.tools).length + 30,
-      title: "Gridlines: Open Manager",
+      title: "AFT Gridlines+: Open Manager",
       icon: "fa-solid fa-table-cells-large",
       visible: true,
       button: true,
@@ -64,7 +64,7 @@ Hooks.on("getSceneControlButtons", controls => {
   controls.gridlines = {
     name: "gridlines",
     order: 95,
-    title: "Gridlines",
+    title: "AFT Gridlines+",
     icon: "fa-solid fa-border-all",
     visible: true,
     activeTool: "select",
@@ -76,7 +76,7 @@ Hooks.on("getSceneControlButtons", controls => {
         visible: true, onChange: (_event, active) => { overlay.setSelecting(active); if (active) panel.open(); }
       },
       manage: {
-        name: "manage", order: 1, title: "Gridlines Manager", icon: "fa-solid fa-table-cells-large",
+        name: "manage", order: 1, title: "AFT Gridlines+ Manager", icon: "fa-solid fa-table-cells-large",
         visible: true, button: true, onChange: () => panel.toggle()
       }
     }
