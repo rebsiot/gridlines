@@ -6,7 +6,10 @@
   touch-action: none;
 }
 .gridlines-canvas-overlay.gridlines-selecting,
-.gridlines-canvas-overlay.gridlines-calibrating { pointer-events: auto; cursor: crosshair; }
+.gridlines-canvas-overlay.gridlines-calibrating,
+.gridlines-canvas-overlay.gridlines-picking-a1 { pointer-events: auto; cursor: crosshair; }
+.gridlines-canvas-overlay.gridlines-dragging { pointer-events: auto; cursor: grab; }
+.gridlines-canvas-overlay.gridlines-dragging:active { cursor: grabbing; }
 .gridlines-canvas-overlay svg { display: block; width: 100%; height: 100%; pointer-events: none; }
 .gridlines-axis-label {
   font-family: Arial, sans-serif;
@@ -99,3 +102,4 @@
 .gridlines-calibration-controls { border: 1px dashed rgba(251,191,36,.65); border-radius: 5px; padding: 8px; margin: 8px 0; }
 .gridlines-calibration-controls p { margin: 6px 0; }
 .gridlines-calibration-label { font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; fill: #fef3c7; stroke: #111827; stroke-width: 3px; paint-order: stroke fill; pointer-events: none; }
+.gridlines-a1-label { font-family: Arial, sans-serif; font-size: 15px; font-weight: 800; fill: #ffda71; stroke: #111827; stroke-width: 4px; paint-order: stroke fill; pointer-events: none; }

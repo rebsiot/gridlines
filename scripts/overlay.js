@@ -29,6 +29,12 @@ export class GridlinesOverlay {
     this.calibrationGuide = null;
     this.onCalibration = () => false;
     this.onCalibrationCancelled = () => {};
+    this.placementMode = null;
+    this.placementStart = null;
+    this.placementInitialAxes = null;
+    this.onPlacementPreview = () => {};
+    this.onPlacementDone = () => {};
+    this.onPickA1 = () => false;
     this.localVisible = true;
     this.sceneState = null;
     this.previewAxes = null;
@@ -104,6 +110,9 @@ export class GridlinesOverlay {
     this.calibrationStart = null;
     this.calibrationEnd = null;
     this.calibrationGuide = null;
+    this.placementMode = null;
+    this.placementStart = null;
+    this.placementInitialAxes = null;
   }
 
   setSceneState(value) { this.sceneState = value; this.schedule(); }
@@ -115,6 +124,7 @@ export class GridlinesOverlay {
   setVisible(visible) { this.localVisible = Boolean(visible); this.schedule(); }
   setSelecting(active) {
     if (active && this.calibrating) this.stopCalibration();
+    if (active && this.placementMode) this.stopPlacement({cancel: true});
     this.selecting = Boolean(active);
     if (!this.selecting) this.dragStart = null;
     this.syncInteraction();
@@ -123,11 +133,42 @@ export class GridlinesOverlay {
   syncInteraction() {
     this.root?.classList.toggle("gridlines-selecting", this.selecting && !this.pending && !this.geometryPreviewPending);
     this.root?.classList.toggle("gridlines-calibrating", Boolean(this.calibrating) && !this.pending);
+    this.root?.classList.toggle("gridlines-dragging", this.placementMode === "drag" && !this.pending);
+    this.root?.classList.toggle("gridlines-picking-a1", this.placementMode === "pick-a1" && !this.pending);
+  }
+  startPlacement(mode) {
+    if (!["drag", "pick-a1"].includes(mode)) throw new Error("Unknown grid placement mode");
+    if (!this.root || !this.sceneState || this.pending || !canvas.ready || !canvas.grid?.isSquare)
+      throw new Error("Enable Gridlines on a square-grid Scene before adjusting its position");
+    if (this.calibrating) this.stopCalibration();
+    this.selecting = false;
+    this.dragStart = null;
+    this.placementMode = mode;
+    this.placementStart = null;
+    this.placementInitialAxes = null;
+    this.selection = null;
+    this.onSelection(null);
+    this.syncInteraction();
+    this.schedule();
+  }
+  stopPlacement({cancel = false, quiet = false} = {}) {
+    const active = Boolean(this.placementMode);
+    if (cancel && this.placementStart && this.placementInitialAxes) {
+      this.setPreviewAxes(this.placementInitialAxes);
+      this.onPlacementPreview(this.placementInitialAxes);
+    }
+    this.placementMode = null;
+    this.placementStart = null;
+    this.placementInitialAxes = null;
+    this.syncInteraction();
+    this.schedule();
+    if (active && !quiet) this.onPlacementDone();
   }
   startCalibration(cells) {
     if (![1, 5, 10].includes(cells)) throw new Error("Invalid calibration guide size");
     if (!this.root || !this.sceneState || this.pending || !canvas.ready || !canvas.grid?.isSquare)
       throw new Error("Enable Gridlines on a square-grid Scene before drawing a guide");
+    if (this.placementMode) this.stopPlacement();
     this.selecting = false;
     this.dragStart = null;
     this.calibrating = cells;
@@ -180,6 +221,21 @@ export class GridlinesOverlay {
   }
 
   onDown(event) {
+    if (this.placementMode && !this.pending && event.button === 0) {
+      const point = this.scenePointFromEvent(event);
+      if (!point) return;
+      event.preventDefault(); event.stopPropagation();
+      if (this.placementMode === "pick-a1") {
+        const cell = overlayResolver(canvas.grid, canvas.dimensions.sceneRect, this.axes).locate(point);
+        if (cell && this.onPickA1(cell) === true) this.stopPlacement();
+        return;
+      }
+      this.placementStart = point;
+      this.placementInitialAxes = {...this.axes};
+      try {this.root.setPointerCapture(event.pointerId);} catch { /* optional */ }
+      this.schedule();
+      return;
+    }
     if (this.calibrating && !this.pending && event.button === 0) {
       const point = this.scenePointFromEvent(event);
       if (!point) return;
@@ -202,6 +258,20 @@ export class GridlinesOverlay {
   }
 
   onMove(event) {
+    if (this.placementMode === "drag" && this.placementStart) {
+      // Allow pointer movement beyond Scene bounds while captured, and use world
+      // coordinates so panning/zoom does not change the effective pixel offset.
+      const point = canvas.canvasCoordinatesFromClient({x:event.clientX,y:event.clientY});
+      if (Number.isFinite(point?.x) && Number.isFinite(point?.y)) {
+        const first = this.placementInitialAxes;
+        const next = {...first,
+          offsetX:Math.max(-20000,Math.min(20000,Math.round((first.offsetX+point.x-this.placementStart.x)*10)/10)),
+          offsetY:Math.max(-20000,Math.min(20000,Math.round((first.offsetY+point.y-this.placementStart.y)*10)/10))};
+        this.setPreviewAxes(next);
+        this.onPlacementPreview(next); // Update the manager's draft; never write Scene flags.
+      }
+      return;
+    }
     if (this.calibrationStart) {
       const point = this.scenePointFromEvent(event);
       if (point) {this.calibrationEnd = point;this.schedule();}
@@ -214,6 +284,12 @@ export class GridlinesOverlay {
   }
 
   onUp(event) {
+    if (this.placementMode === "drag" && this.placementStart) {
+      this.onMove(event); // Use the release point even if the browser skipped its last move.
+      try {this.root.releasePointerCapture(event.pointerId);} catch { /* optional */ }
+      this.stopPlacement();
+      return;
+    }
     if (this.calibrationStart) {
       const last = this.scenePointFromEvent(event) ?? this.calibrationEnd;
       const guide = {from: this.calibrationStart, to: last, cells: this.calibrating};
@@ -241,20 +317,25 @@ export class GridlinesOverlay {
   }
 
   onCancel() {
+    if (this.placementMode === "drag" && this.placementStart) {
+      this.stopPlacement({cancel:true});
+      return;
+    }
     this.dragStart = null;
     this.calibrationStart = null;
     this.calibrationEnd = null;
     this.schedule();
   }
   onContext(event) {
-    if (!this.selecting && !this.calibrating) return;
+    if (!this.selecting && !this.calibrating && !this.placementMode) return;
     event.preventDefault();
     event.stopPropagation();
     this.onContextMenu();
   }
   onEscape(event) {
-    if ((!this.selecting && !this.calibrating) || event.key !== "Escape" || event.target?.matches?.("input,textarea,[contenteditable]")) return;
-    if (this.calibrating) this.stopCalibration();
+    if ((!this.selecting && !this.calibrating && !this.placementMode) || event.key !== "Escape" || event.target?.matches?.("input,textarea,[contenteditable]")) return;
+    if (this.placementMode) this.stopPlacement({cancel:true});
+    else if (this.calibrating) this.stopCalibration();
     else this.setSelection(null);
   }
 
@@ -272,7 +353,7 @@ export class GridlinesOverlay {
     const state = this.sceneState;
     this.syncInteraction();
     if (!state || !canvas.ready || !canvas.grid?.isSquare || viewRect.width < 1 || viewRect.height < 1) return;
-    if (!this.localVisible && !this.calibrating && !this.calibrationGuide) return;
+    if (!this.localVisible && !this.calibrating && !this.calibrationGuide && !this.placementMode) return;
     const sceneRect = canvas.dimensions.sceneRect;
     const axes = this.axes;
     const resolver = overlayResolver(canvas.grid, sceneRect, axes);
@@ -286,6 +367,7 @@ export class GridlinesOverlay {
     if (!visibleWorld) return;
     const origin = resolver.origin;
     const size = resolver.size;
+    const majorOrigin = {x:origin.x+axes.a1Col*size,y:origin.y+axes.a1Row*size};
     const status = this.pending;
     const screenA = toScreen({x: visibleWorld.x, y: visibleWorld.y});
     const screenB = toScreen({x: visibleWorld.right, y: visibleWorld.bottom});
@@ -293,19 +375,19 @@ export class GridlinesOverlay {
     // hit-testing, formatted cell bounds, and named range navigation.
     if (axes.enabled && this.localVisible) {
       const step = size * axes.majorEvery / axes.minorDivisions;
-      const xMin = Math.max(0, Math.ceil((visibleWorld.x - origin.x) / step - 1e-9));
-      const xMax = Math.floor((visibleWorld.right - origin.x) / step + 1e-9);
-      const yMin = Math.max(0, Math.ceil((visibleWorld.y - origin.y) / step - 1e-9));
-      const yMax = Math.floor((visibleWorld.bottom - origin.y) / step + 1e-9);
+      const xMin = Math.ceil((visibleWorld.x - majorOrigin.x) / step - 1e-9);
+      const xMax = Math.floor((visibleWorld.right - majorOrigin.x) / step + 1e-9);
+      const yMin = Math.ceil((visibleWorld.y - majorOrigin.y) / step - 1e-9);
+      const yMax = Math.floor((visibleWorld.bottom - majorOrigin.y) / step + 1e-9);
       if (xMax - xMin <= LIMIT_AXIS_LINES && yMax - yMin <= LIMIT_AXIS_LINES) {
         const minor = [], major = [];
         for (let n = xMin; n <= xMax; n++) {
-          const x = origin.x + n * step;
+          const x = majorOrigin.x + n * step;
           const p = toScreen({x, y:visibleWorld.y});
           (n % axes.minorDivisions === 0 ? major : minor).push(`M${p.x.toFixed(2)} ${screenA.y.toFixed(2)}V${screenB.y.toFixed(2)}`);
         }
         for (let n = yMin; n <= yMax; n++) {
-          const y = origin.y + n * step;
+          const y = majorOrigin.y + n * step;
           const p = toScreen({x:visibleWorld.x, y});
           (n % axes.minorDivisions === 0 ? major : minor).push(`M${screenA.x.toFixed(2)} ${p.y.toFixed(2)}H${screenB.x.toFixed(2)}`);
         }
@@ -317,21 +399,21 @@ export class GridlinesOverlay {
         // by default. Existing v0.1.1 Scenes keep absolute-cell labels to
         // avoid silently changing their previously established coordinates.
         if (axes.labels) {
-          const firstMajorX = Math.max(0, Math.ceil((visibleWorld.x - origin.x)/(size * axes.majorEvery) - 1e-9));
-          const lastMajorX = Math.floor((visibleWorld.right - origin.x)/(size * axes.majorEvery) + 1e-9);
-          const firstMajorY = Math.max(0, Math.ceil((visibleWorld.y - origin.y)/(size * axes.majorEvery) - 1e-9));
-          const lastMajorY = Math.floor((visibleWorld.bottom - origin.y)/(size * axes.majorEvery) + 1e-9);
+          const firstMajorX = Math.max(0, Math.ceil((visibleWorld.x - majorOrigin.x)/(size * axes.majorEvery) - 1e-9));
+          const lastMajorX = Math.floor((visibleWorld.right - majorOrigin.x)/(size * axes.majorEvery) + 1e-9);
+          const firstMajorY = Math.max(0, Math.ceil((visibleWorld.y - majorOrigin.y)/(size * axes.majorEvery) - 1e-9));
+          const lastMajorY = Math.floor((visibleWorld.bottom - majorOrigin.y)/(size * axes.majorEvery) + 1e-9);
           const screenStep = Math.abs(toScreen({x:origin.x + size * axes.majorEvery,y:origin.y}).x - toScreen({x:origin.x,y:origin.y}).x);
           if (screenStep > 40) {
             for (let majorCol = firstMajorX; majorCol <= lastMajorX && majorCol - firstMajorX <= 80; majorCol++) {
-              const atX = origin.x + majorCol * axes.majorEvery * size;
+              const atX = majorOrigin.x + majorCol * axes.majorEvery * size;
               const at = toScreen({x:atX, y:visibleWorld.y});
               const lbl = svgElement("text", {x:at.x + 8, y:screenA.y + 15, class:"gridlines-axis-label", "text-anchor":"start"});
               lbl.textContent = axes.coordinateScope === "major" ? columnName(majorCol) : columnName(majorCol*axes.majorEvery);
               this.svg.append(lbl);
             }
             for (let majorRow = firstMajorY; majorRow <= lastMajorY && majorRow - firstMajorY <= 80; majorRow++) {
-              const atY = origin.y + majorRow * axes.majorEvery * size;
+              const atY = majorOrigin.y + majorRow * axes.majorEvery * size;
               const at = toScreen({x:visibleWorld.x, y:atY});
               const lbl = svgElement("text", {x:screenA.x + 6, y:at.y + 27, class:"gridlines-axis-label", "text-anchor":"start"});
               lbl.textContent = String(1 + (axes.coordinateScope === "major" ? majorRow : majorRow*axes.majorEvery));
@@ -363,6 +445,20 @@ export class GridlinesOverlay {
         const a = toScreen({x: box.x, y: box.y});
         const b = toScreen({x: box.right, y: box.bottom});
         this.svg.append(svgElement("rect", {x: a.x, y: a.y, width: Math.max(0, b.x - a.x), height: Math.max(0, b.y - a.y), fill: "#3b82f6", "fill-opacity": .15, stroke: "#60a5fa", "stroke-width": 2}));
+      }
+    }
+    // Temporary explicit origin marker: visible while moving/picking A1 and
+    // while the picked origin is pending approval. It does not create a Drawing.
+    if (this.placementMode || (this.previewAxes && (this.previewAxes.a1Row!==normalizeAxes(state.axes).a1Row ||
+        this.previewAxes.a1Col!==normalizeAxes(state.axes).a1Col))) {
+      const anchorBox = clipBounds(resolver.rangeBounds({from:{row:axes.a1Row,col:axes.a1Col},
+        to:{row:Math.min(99999,axes.a1Row+axes.majorEvery-1),col:Math.min(99999,axes.a1Col+axes.majorEvery-1)}}),sceneRect);
+      if (anchorBox) {
+        const a=toScreen({x:anchorBox.x,y:anchorBox.y}), b=toScreen({x:anchorBox.right,y:anchorBox.bottom});
+        this.svg.append(svgElement("rect", {class:"gridlines-a1-area",x:a.x,y:a.y,width:b.x-a.x,height:b.y-a.y,
+          fill:"#f59e0b","fill-opacity":.06,stroke:"#fbbf24","stroke-width":2,"stroke-dasharray":"7 4"}));
+        const tag=svgElement("text",{class:"gridlines-a1-label",x:a.x+8,y:a.y+20});
+        tag.textContent="A1";this.svg.append(tag);
       }
     }
     const guide = this.calibrationStart

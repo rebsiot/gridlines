@@ -9,6 +9,7 @@ const MAX_FORMATS = 1000;
 export const DEFAULT_AXES = Object.freeze({
   enabled: true, labels: true, majorEvery: 10, minorDivisions: 5,
   cellSize: null, offsetX: 0, offsetY: 0,
+  a1Row: 0, a1Col: 0,
   color: "#65baff", alpha: .65, majorWidth: 2, minorWidth: 1, coordinateScope: "major"
 });
 
@@ -25,6 +26,8 @@ export function validateAxes(value) {
   if (!["major", "cell"].includes(a.coordinateScope)) throw new Error("Invalid coordinate labeling mode");
   if (!integer(a.majorEvery, 1, 200) || !integer(a.minorDivisions, 1, 20))
     throw new Error("Major interval must be 1–200 cells, minor divisions 1–20");
+  if (!integer(a.a1Row, 0, 99999) || !integer(a.a1Col, 0, 99999))
+    throw new Error("A1 anchor must be a valid nonnegative grid cell");
   if (!(a.cellSize === null || finite(a.cellSize, 10, 2000))) throw new Error("Gridlines cell size must be 10–2000 pixels");
   if (!finite(a.offsetX, -20000, 20000) || !finite(a.offsetY, -20000, 20000)) throw new Error("Gridlines offset is outside the supported range");
   if (!/^#[0-9a-f]{6}$/i.test(a.color)) throw new Error("Invalid gridline color");
@@ -36,7 +39,9 @@ export function validateAxes(value) {
 export function overlayGeometryChanged(before, after, nativeSize) {
   const a = normalizeAxes(before), b = normalizeAxes(after);
   const effective = x => x.cellSize ?? nativeSize;
-  return effective(a) !== effective(b) || a.offsetX !== b.offsetX || a.offsetY !== b.offsetY;
+  // A1 changes coordinate meanings and major-line positions, even though fine-cell geometry stays put.
+  return effective(a) !== effective(b) || a.offsetX !== b.offsetX || a.offsetY !== b.offsetY ||
+    a.a1Row !== b.a1Row || a.a1Col !== b.a1Col;
 }
 
 

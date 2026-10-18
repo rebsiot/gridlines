@@ -1,4 +1,4 @@
-import {parseRange, normalizeRange, formatRange, overlayResolver, squareResolver, parseMajorRange, formatMajorRange} from "./coordinates.js";
+import {parseRange, normalizeRange, formatRange, overlayResolver, squareResolver, parseMajorRange, formatMajorRange, parseAnchoredFineRange} from "./coordinates.js";
 import {calibrateGuide, CALIBRATION_PRESETS} from "./calibration.js";
 import {geometrySnapshot, alignmentStatus, addFill, addNamedRange, normalizeAxes, validateAxes, overlayGeometryChanged} from "./model.js";
 
@@ -49,6 +49,7 @@ export class GridlinesPanel {
   close() {
     // A closed panel must never leave an invisible click-catching overlay active.
     this.overlay.setSelecting(false);
+    this.overlay.stopPlacement?.({cancel:true,quiet:true});
     this.overlay.stopCalibration?.();
     this.visible = false;
     this.axesDraft = null;
@@ -103,6 +104,30 @@ export class GridlinesPanel {
     }
   }
 
+  /** Update draft origin without writing the Scene; invoked on every drag move. */
+  applyDragPreview(axes) {
+    this.axesDraft = validateAxes(axes);
+    this.calibrationResult = null;
+  }
+
+  /** Pick any underlying fine cell as the top-left of the new A1 major block. */
+  applyA1(cell) {
+    try {
+      const scene=this.scene, state=this.service.read(scene);
+      if(!scene || !state || alignmentStatus(state, geometrySnapshot(scene)).pending)
+        throw new Error("Enable Gridlines and resolve native grid changes before choosing A1");
+      const next=validateAxes({...normalizeAxes(this.axesDraft ?? state.axes),a1Row:cell.row,a1Col:cell.col});
+      this.axesDraft=next;
+      this.calibrationResult=null;
+      this.overlay.setPreviewAxes(next);
+      this.announce(`A1 starts at fine cell ${cell.col+1}, row ${cell.row+1}. Preview only; click Save Grid Setup.`);
+      return true;
+    } catch(error) {
+      ui.notifications?.warn?.(`Gridlines A1: ${error.message}`);
+      return false;
+    }
+  }
+
   currentSelection() {
     if (!this.selection) throw new Error("Select cells first, using Gridlines > Select Cells");
     return normalizeRange(this.selection.from, this.selection.to);
@@ -120,15 +145,16 @@ export class GridlinesPanel {
     const state = this.service.read(this.scene);
     if (!state) throw new Error("Enable Gridlines on this Scene first");
     if (alignmentStatus(state, geometrySnapshot(this.scene)).pending) throw new Error("Resolve the grid alignment warning first");
-    if (this.overlay.geometryPreviewPending || this.overlay.calibrating)
+    if (this.overlay.geometryPreviewPending || this.overlay.calibrating || this.overlay.placementMode)
       throw new Error("Save or discard the grid calibration preview before navigating");
     const target = String(value || "").trim();
     const named = state.namedRanges.find(n => n.name.toLocaleLowerCase() === target.toLocaleLowerCase());
     const axes = normalizeAxes(state.axes);
     const query = target.toLowerCase().startsWith("cell:") ? target.slice(5).trim() : target;
     const exactCell = target.toLowerCase().startsWith("cell:");
-    const range = this.validateRange(named?.range ?? (exactCell || axes.coordinateScope === "cell"
-      ? parseRange(query) : parseMajorRange(query, axes.majorEvery)));
+    const anchor={row:axes.a1Row,col:axes.a1Col};
+    const range = this.validateRange(named?.range ?? (exactCell ? parseRange(query) : axes.coordinateScope === "cell"
+      ? parseAnchoredFineRange(query, anchor) : parseMajorRange(query, axes.majorEvery, anchor)));
     const resolver = overlayResolver(canvas.grid, canvas.dimensions.sceneRect, axes);
     this.overlay.setSelection(range);
     const box = resolver.rangeBounds(range), rect = canvas.dimensions.sceneRect;
@@ -166,6 +192,7 @@ export class GridlinesPanel {
     const pending = alignmentStatus(state, snapshot).pending;
     if (this.draftSceneId !== scene.id) {
       this.axesDraft=null;this.calibrationResult=null;
+      this.overlay.stopPlacement?.({cancel:true,quiet:true});
       this.draftSceneId=scene.id;this.overlay.setPreviewAxes(null);
     }
     if (pending) {
@@ -211,6 +238,27 @@ export class GridlinesPanel {
     options.open = true;
     node("summary", options, "Grid Setup — live preview");
     node("p", options, "These settings change only Gridlines' visual overlay, not Foundry's native movement grid. Changes preview immediately; click Save to keep them.");
+    const placement=node("div",options,undefined,"gridlines-calibration-controls");
+    node("strong",placement,"Drag grid / Choose A1");
+    node("p",placement,"Drag the whole grid directly over the map to align it. Release to preview. Then, if needed, choose Pick A1 and click the cell where major-block coordinate A1 should begin. Neither step writes to the Scene until Save Grid Setup.");
+    const placementButtons=node("div",placement,undefined,"gridlines-actions");
+    button("Drag Grid",()=>this.run(()=>{
+      if (!this.overlay.root) this.overlay.attach();
+      this.overlay.startPlacement("drag");
+    }),placementButtons,{disabled:this.overlay.placementMode==="drag"});
+    button("Pick A1 Cell",()=>this.run(()=>{
+      if (!this.overlay.root) this.overlay.attach();
+      this.overlay.startPlacement("pick-a1");
+    }),placementButtons,{disabled:this.overlay.placementMode==="pick-a1"});
+    if(this.overlay.placementMode){
+      node("p",placement,this.overlay.placementMode==="drag"
+        ? "Drag anywhere on the map to move Gridlines. The orange A1 marker follows the grid. Escape cancels the move."
+        : "Click the fine cell that should begin major block A1. The 10-cell (or configured) major axes will start there. Escape cancels.");
+      button("Cancel Placement",()=>{
+        this.overlay.stopPlacement({cancel:true});
+      },placementButtons);
+    }
+    node("small",placement,`Current A1 anchor: fine cell column ${draft.a1Col+1}, row ${draft.a1Row+1}. A1 numbering changes; existing saved fine-cell indices do not.`);
     const calibration = node("div", options, undefined, "gridlines-calibration-controls");
     node("strong", calibration, "Draw to align a printed map grid");
     node("p", calibration, "Choose 10x10, 5x5, or 1x1. Drag horizontally/vertically across that many printed squares to calibrate one axis, or drag diagonally from corner to corner to calibrate both. Release to preview; nothing is saved until Save Grid Setup.");
@@ -289,7 +337,7 @@ export class GridlinesPanel {
         savedAxes.majorEvery !== next.majorEvery || savedAxes.coordinateScope !== next.coordinateScope;
     };
     if (state.formats.length || state.namedRanges.length)
-      node("p",options,"This Scene already has formatted cells or named ranges. If you move or resize the overlay, their saved cell indices remain unchanged, but the highlighted map locations may shift. Back up the Scene/world before applying geometry or coordinate-label changes.");
+      node("p",options,"This Scene already has formatted cells or named ranges. Moving the grid changes their map positions; picking a new A1 changes coordinate labels and Go To addresses. Saved fine-cell indices and IDs remain unchanged. Back up the Scene/world before saving changes.");
     const backupRow=node("label",options,undefined,"gridlines-check");
     const backup=node("input",backupRow);backup.type="checkbox";
     node("span",backupRow,"I have a recoverable backup and approve moving existing overlay locations if geometry changes");
@@ -302,6 +350,7 @@ export class GridlinesPanel {
       this.axesDraft=null;
       this.calibrationResult=null;
       this.overlay.stopCalibration?.();
+      this.overlay.stopPlacement?.({quiet:true});
       this.overlay.setPreviewAxes?.(null);
       this.announce("Gridlines overlay setup saved");
     }),actions);
@@ -309,6 +358,7 @@ export class GridlinesPanel {
       this.axesDraft=null;
       this.calibrationResult=null;
       this.overlay.stopCalibration?.();
+      this.overlay.stopPlacement?.({cancel:true,quiet:true});
       this.overlay.setPreviewAxes?.(null);
       this.refresh();
     },actions);
@@ -321,7 +371,7 @@ export class GridlinesPanel {
 
     const selectionTools = node("div", root, undefined, "gridlines-section gridlines-actions");
     button(this.overlay.selecting ? "Stop Selecting Cells" : "Select Cells on Map", () => this.run(() => {
-      if (this.overlay.geometryPreviewPending) throw new Error("Save or discard overlay geometry changes before selecting cells");
+      if (this.overlay.geometryPreviewPending || this.overlay.placementMode) throw new Error("Save or discard grid placement changes before selecting cells");
       if (!this.overlay.root) this.overlay.attach();
       if (!this.overlay.root) throw new Error("Gridlines overlay could not attach to Foundry's canvas; check the browser console");
       this.overlay.setSelecting(!this.overlay.selecting);
@@ -337,11 +387,11 @@ export class GridlinesPanel {
     button("Go", navigate, navRow);
 
     node("small", nav, draft.coordinateScope === "major"
-      ? "A1 refers to the first major block. Use cell:D3 for an exact small cell."
-      : "Existing Scene coordinates use individual cells (legacy mode). Use the new Major block labeling option in Grid Setup to change this.");
+      ? "A1 refers to the selected major block origin. Use cell:D3 for an exact internal fine cell."
+      : "Existing Scene coordinates use individual cells (legacy mode). Pick A1 to change their displayed numbering; cell:D3 keeps the original fine-cell indices.");
     const selection = node("div", root, undefined, "gridlines-section");
     node("strong", selection, this.selection
-      ? `Selected fine cells: ${formatRange(this.selection)} · Major ${formatMajorRange(this.selection, savedAxes.majorEvery)}` : "No cells selected");
+      ? `Selected fine cells: ${formatRange(this.selection)} · Major ${formatMajorRange(this.selection, savedAxes.majorEvery, {row:savedAxes.a1Row,col:savedAxes.a1Col})}` : "No cells selected");
     node("p", selection, "Drag across cells, then shade or name them. Major axes are labels for blocks; exact saved selections use fine-cell indices.");
     const settings = node("div", root, undefined, "gridlines-actions");
     const color = field("Fill", "color", settings, this.inputs.color);
@@ -350,7 +400,7 @@ export class GridlinesPanel {
     opacity.min = "0"; opacity.max = "100"; opacity.step = "5";
     opacity.addEventListener("input", () => { this.inputs.opacity = opacity.value; });
     button("Shade Selection", () => this.run(async () => {
-      if (this.overlay.geometryPreviewPending || this.overlay.calibrating)
+      if (this.overlay.geometryPreviewPending || this.overlay.calibrating || this.overlay.placementMode)
         throw new Error("Save or discard the grid calibration preview before shading cells");
       const selected = this.validateRange(this.currentSelection());
       await this.service.edit(scene, state.revision, current => {
@@ -366,7 +416,7 @@ export class GridlinesPanel {
     name.setAttribute("aria-label", "Name selected cells");
     name.addEventListener("input", () => { this.inputs.name = name.value; });
     button("Save Name", () => this.run(async () => {
-      if (this.overlay.geometryPreviewPending || this.overlay.calibrating)
+      if (this.overlay.geometryPreviewPending || this.overlay.calibrating || this.overlay.placementMode)
         throw new Error("Save or discard the grid calibration preview before naming cells");
       const selected = this.validateRange(this.currentSelection());
       await this.service.edit(scene, state.revision, current => addNamedRange(current, name.value, selected, uid()));

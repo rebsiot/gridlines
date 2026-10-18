@@ -12,6 +12,9 @@ overlay.onSelection = range => panel.setSelection(range);
 overlay.onContextMenu = () => panel.open();
 overlay.onCalibration = guide => panel.applyCalibration(guide);
 overlay.onCalibrationCancelled = () => panel.refresh();
+overlay.onPlacementPreview = axes => panel.applyDragPreview(axes);
+overlay.onPlacementDone = () => panel.refresh();
+overlay.onPickA1 = cell => panel.applyA1(cell);
 let lastWarning = null;
 
 function safeRefresh() {
@@ -28,6 +31,7 @@ function safeRefresh() {
       }
       overlay.setSelecting(false);
       overlay.stopCalibration();
+      overlay.stopPlacement({cancel:true,quiet:true});
       overlay.setPreviewAxes(null);
       panel.axesDraft = null;
       panel.open();

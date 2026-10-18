@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.4 — 2026-10-18 (experimental alpha)
+
+- Added **Drag Grid**. Click the mode, drag anywhere on the Scene and release to preview new X/Y offsets; the A1 guide moves with the overlay. The dragging gesture cannot write Scene data.
+- Added **Pick A1 Cell** after dragging. Click a fine cell to make it the beginning of major block A1; letter/number labels, the major/minor line phase and normal Go To addresses use the selected origin. For legacy fine-cell mode, displayed cell addresses also follow the selected A1. Explicit `cell:` queries still refer to unchanged internal fine-cell indices.
+- Added a temporary highlighted A1 area during placement and whenever the A1 choice is unsaved. Escape cancels a drag or picker; Save/Discard remains explicit.
+- Preserved existing Scene flags, saved formatting/range IDs, and previous grid values through optional `a1Row` / `a1Col` fields defaulting to zero. A1 remapping changes reference labels, **not** the stored fine-cell indices; back up and confirm before saving where named ranges/fills exist.
+- Does not edit Foundry's native grid, Tiles, Drawings, Regions or tokens. No migration, auto-import or change to Pro ownership.
+- Automated/mock verification: 30 passed; package verification performed locally. **Live Foundry v14 test not yet run.**
+
 ## 0.1.3 — 2026-10-17 (experimental alpha)
 
 - Added **Draw 10x10 / 5x5 / 1x1 Guide** to GM Grid Setup. Drag horizontally or vertically across that many printed squares to measure a cell size and align the corresponding axis; drag corner-to-corner across an N×N printed square to align both X and Y.

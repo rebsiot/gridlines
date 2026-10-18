@@ -2,7 +2,19 @@
 
 Gridlines helps a GM identify, shade, and name map cells without adding Tiles, Drawings, or Regions. It draws over **Foundry's existing square Scene grid**. You can set a separate visual cell size and X/Y offset for Gridlines, without altering Foundry token snapping, walls, map objects or movement distances.
 
-**Status: v0.1.3 experimental alpha, available through the GitHub-hosted manifest. Not live-tested in Foundry.** This is not an official Foundry package listing or stable release. Install only in a backed-up test world.
+**Status: v0.1.4 experimental alpha, available through the GitHub-hosted manifest. Not live-tested in Foundry.** This is not an official Foundry package listing or stable release. Install only in a backed-up test world.
+
+**v0.1.4 changes:** Drag the overlay itself to align it, then optionally choose which fine cell starts the major **A1** block. Dragging changes only the previewed X/Y offsets; picking A1 changes only its coordinate origin and where major axes begin. These actions do not change Foundry's native grid or write Scene documents until **Save Grid Setup**.
+
+## First use: drag the grid and choose A1
+
+1. As GM, open a backed-up test world's square-grid Scene. Select **Token Controls → Gridlines: Open Manager** and **Enable on this Scene** if needed.
+2. In **Grid Setup — live preview**, click **Drag Grid**. Grab the map and move the overlay until its lines match the map image. The temporary amber **A1** area moves along with it. Release to preview the X/Y offsets.
+3. **Optional:** Click **Pick A1 Cell**, then click the *fine cell whose top-left corner should begin major block A1*. Gridlines redraws its major axes and numbering from that cell. For a 10-cell major interval, A1 includes that cell and the next nine fine cells in each direction. This does not change the underlying cell size.
+4. Verify the orange A1 marker and the alphabetic/numeric major labels. Click **Save Grid Setup** to persist the position and A1 selection, or **Discard Preview** to revert. Escape exits a placement mode and cancels any drag in progress.
+5. If this Scene already has named ranges or shading, back up the world and confirm the warning before saving. Saved fine-cell indices and IDs remain unchanged, but map positions after moving the grid and coordinate addresses after choosing A1 can change.
+
+No Drawing, Tile, Region, token movement, or native Foundry Scene grid update is created by this workflow. `Go To → A1` uses the newly chosen major block after saving; `cell:D3` still resolves the same internal fine cell it did before.
 
 **v0.1.3 changes:** You can draw a 10x10, 5x5 or 1x1 alignment guide over the printed map grid. A horizontal or vertical N-cell line calibrates cell size and that axis; a corner-to-corner N×N square calibrates X and Y together. All guide actions preview until you explicitly save. Adjustable Gridlines overlay offsets, major/minor styling and live color/opacity/width preview remain available.
 
@@ -48,7 +60,7 @@ No existing Actor, Tile, Drawing, Region, Wall, Journal, or native Scene grid se
 ## Current features
 
 - Excel-style coordinates: major blocks by default on new Scenes; exact fine-cell addresses also supported. Existing fine-cell Scene definitions remain compatible.
-- GM-only Token Controls launcher plus dedicated Scene Control, **Draw 10x10 / 5x5 / 1x1 Guide** calibration, click-and-drag selection, custom overlay size and X/Y offsets, 10-cell major axes / five minor divisions, and major-axis labels.
+- GM-only Token Controls launcher plus dedicated Scene Control, **Drag Grid**, **Pick A1 Cell**, **Draw 10x10 / 5x5 / 1x1 Guide** calibration, click-and-drag selection, custom overlay size and X/Y offsets, 10-cell major axes / five minor divisions, and major-axis labels.
 - Live-preview controls for line thickness, color and opacity; shading and named ranges saved to Scene flags, navigation to addresses or saved names.
 - Native-grid size/type/dimension change detection and guarded alignment resolution.
 - Read-only programmatic module API for future Gridlines+ integration (`game.modules.get('gridlines').api`).
@@ -62,7 +74,7 @@ No existing Actor, Tile, Drawing, Region, Wall, Journal, or native Scene grid se
 - Stale-revision checks exist but **multi-GM concurrent edits are not atomic**. Use one editing GM at a time.
 - No Undo/Redo, rename/delete range, noncontiguous selection, or true per-cell conditional formatting yet. Repeated shading forms ordered visual layers.
 - Native Foundry grid-change pixel-preserving remapping approximates coverage to whole cells and is disallowed if Scene dimensions change or grid type changes. Custom Gridlines overlay size/offset changes keep stored fine-cell addresses (and therefore may move the highlighted map location); an explicit backup confirmation is required if existing formatting or ranges are present.
-- Calibration guide relies on Foundry canvas coordinate transforms and a DOM/SVG overlay; live drag/hit-testing on different Foundry v14 clients remains unverified. The overlay is DOM/SVG on top of the canvas: **fog-of-war occlusion and rendering order are not yet live-tested**. For that reason player rendering is disabled in this build.
+- Calibration and Drag Grid placement rely on Foundry canvas coordinate transforms and a DOM/SVG overlay; live drag/hit-testing on different Foundry v14 clients remains unverified. Pick A1 is valid only on an underlying fine cell, and areas before the selected A1 cannot have positive major-block addresses. The overlay is DOM/SVG on top of the canvas: **fog-of-war occlusion and rendering order are not yet live-tested**. For that reason player rendering is disabled in this build.
 - No automatic migration or remap of existing non-Gridlines Scene objects.
 
 ## Install for a private test
@@ -71,7 +83,7 @@ For the published experimental alpha, in Foundry Setup choose **Add-on Modules �
 
 1. Stop Foundry. Back up the test world (and the existing `Data/modules/gridlines` folder if one exists).
 2. Create `Data/modules/gridlines/`, then extract the **contents** of the ZIP into that folder. The ZIP contains `module.json` at its root: the installed path must be `Data/modules/gridlines/module.json` (St. Louis: `Z:\Data\modules\gridlines\module.json`). Avoid any extra nested folder.
-3. Restart Foundry, verify version **0.1.3**, enable **Gridlines (Alpha)** in the test world, then refresh the browser.
+3. Restart Foundry, verify version **0.1.4**, enable **Gridlines (Alpha)** in the test world, then refresh the browser.
 4. Follow the Warehouse example above. Verify the browser console has no Gridlines errors.
 
 ### Rollback
@@ -86,5 +98,5 @@ Automated Node tests and a module packaging audit accompany this source. See `TE
 
 - Design owner: **G03**, which is not the Foundry module ID.
 - Proposed private-test module ID and installation folder: **`gridlines`**. Do not change this ID after real world data is in use without an explicit migration plan.
-- Source provenance: built from the inspected `rebsiot/gridlines` v0.1.2 source on `main` at commit `7e1127c150747a3fee8cb0629967d5f8735a132d`. This update preserves prior module identity and flags; this new build has not been live-tested.
+- Source provenance: built from the inspected `rebsiot/gridlines` v0.1.3 source on `main` at exact commit `eb5437e26f941b31f82589ecc79f165f6a65b4a7`. The installed Foundry version is unverified. This update preserves prior module identity and flags; this build has not been live-tested.
 - Branding, licensing, and paid distribution remain the responsibility of the separate AFT conversation. **No explicit open-source redistribution license has been granted by this repository.** A public GitHub source does not imply permission to repackage or resell.

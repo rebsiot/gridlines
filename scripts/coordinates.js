@@ -152,16 +152,25 @@ export function overlayResolver(grid, sceneRect, axes = {}) {
 
 /** Major block references: A1 covers majorEvery x majorEvery fine cells.
  * Saved formatting and named ranges retain fine-cell indices. */
-export function parseMajorRange(text, majorEvery) {
+export function parseMajorRange(text, majorEvery, a1 = {row:0,col:0}) {
   if (!Number.isInteger(majorEvery) || majorEvery < 1) throw new Error("Invalid major interval");
   const r = parseRange(text);
-  const from = {row: r.from.row * majorEvery, col: r.from.col * majorEvery};
-  const to = {row: (r.to.row + 1)*majorEvery - 1, col: (r.to.col + 1)*majorEvery - 1};
+  const from = {row: a1.row + r.from.row * majorEvery, col: a1.col + r.from.col * majorEvery};
+  const to = {row: a1.row + (r.to.row + 1)*majorEvery - 1, col: a1.col + (r.to.col + 1)*majorEvery - 1};
   return normalizeRange(from, to);
 }
 
-export function formatMajorRange(range, majorEvery) {
+export function formatMajorRange(range, majorEvery, a1 = {row:0,col:0}) {
   const r = normalizeRange(range.from, range.to);
-  return formatRange({from:{row:Math.floor(r.from.row/majorEvery),col:Math.floor(r.from.col/majorEvery)},
-    to:{row:Math.floor(r.to.row/majorEvery),col:Math.floor(r.to.col/majorEvery)}});
+  if (r.from.row < a1.row || r.from.col < a1.col) return "Before A1";
+  return formatRange({from:{row:Math.floor((r.from.row-a1.row)/majorEvery),col:Math.floor((r.from.col-a1.col)/majorEvery)},
+    to:{row:Math.floor((r.to.row-a1.row)/majorEvery),col:Math.floor((r.to.col-a1.col)/majorEvery)}});
+}
+
+/** Legacy individual-cell labels can also be relative to a GM-picked A1.
+ * `cell:D3` remains an explicit, unshifted internal fine-cell reference. */
+export function parseAnchoredFineRange(text, a1 = {row:0,col:0}) {
+  const r = parseRange(text);
+  return normalizeRange({row:a1.row+r.from.row,col:a1.col+r.from.col},
+    {row:a1.row+r.to.row,col:a1.col+r.to.col});
 }

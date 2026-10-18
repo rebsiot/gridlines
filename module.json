@@ -2,8 +2,8 @@
   "id": "gridlines",
   "type": "module",
   "title": "Gridlines (Alpha)",
-  "description": "Experimental Foundry v14 Gridlines: draw 10x10, 5x5, or 1x1 calibration guides; adjustable overlay cell size/offsets, major/minor axes, shading, and named ranges. Test-world use only.",
-  "version": "0.1.3",
+  "description": "Experimental Foundry v14 Gridlines: drag grid to align, pick A1 origin, 10x10/5x5/1x1 guides, shading, named ranges. Test-world use only.",
+  "version": "0.1.4",
   "authors": [
     {
       "name": "AFT (Advanced Features & Tools)"
@@ -20,7 +20,7 @@
   ],
   "url": "https://github.com/rebsiot/gridlines",
   "manifest": "https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json",
-  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.3-alpha.zip",
+  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.4-alpha.zip",
   "readme": "README.md",
   "changelog": "CHANGELOG.md",
   "bugs": "https://github.com/rebsiot/gridlines/issues"
