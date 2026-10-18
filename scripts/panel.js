@@ -94,7 +94,7 @@ export class GridlinesPanel {
       this.axesDraft = next;
       this.calibrationResult = measured;
       this.overlay.setPreviewAxes(next);
-      this.announce(`Calibration preview: ${measured.recommended.cellSize}px cells; ${measured.mode} guide`);
+      this.announce(`Calibration preview: ${next.cellWidth ?? canvas.grid.sizeX}px wide × ${next.cellHeight ?? canvas.grid.sizeY}px tall; ${measured.mode} guide`);
       return true;
     } catch(error) {
       ui.notifications?.warn?.(`Gridlines calibration: ${error.message}`);
@@ -177,7 +177,7 @@ export class GridlinesPanel {
     button("×", () => this.close(), header, {title: "Close AFT Gridlines+ manager"});
     const scene = this.scene;
     if (!scene) { node("p", root, "Open a Scene to use Gridlines."); return; }
-    if (!canvas.grid?.isSquare) { node("p", root, "This prototype supports only native square grids. No Scene data was changed."); return; }
+    if (!canvas.grid?.isSquare) { node("p", root, "This build requires a native Foundry square-grid Scene, although the Gridlines visual overlay can use rectangular cells. No Scene data was changed."); return; }
     let state, snapshot;
     try { state = this.service.read(scene); snapshot = geometrySnapshot(scene); }
     catch (error) { node("p", root, `Cannot read Scene data: ${error.message}`); return; }
@@ -261,7 +261,7 @@ export class GridlinesPanel {
     node("small",placement,`Current A1 anchor: fine cell column ${draft.a1Col+1}, row ${draft.a1Row+1}. A1 numbering changes; existing saved fine-cell indices do not.`);
     const calibration = node("div", options, undefined, "gridlines-calibration-controls");
     node("strong", calibration, "Draw to align a printed map grid");
-    node("p", calibration, "Choose 10x10, 5x5, or 1x1. Drag horizontally/vertically across that many printed squares to calibrate one axis, or drag diagonally from corner to corner to calibrate both. Release to preview; nothing is saved until Save Grid Setup.");
+    node("p", calibration, "Choose 10x10, 5x5, or 1x1. Draw a horizontal/vertical guide to measure one dimension, or drag corner-to-corner across a printed block to measure both width and height, even if the cells are rectangular. Release to preview; nothing is saved until Save Grid Setup.");
     const guideButtons = node("div", calibration, undefined, "gridlines-actions");
     for (const n of CALIBRATION_PRESETS) {
       button(`Draw ${n}x${n} Guide`, () => this.run(() => {
@@ -280,12 +280,17 @@ export class GridlinesPanel {
     }
     if (this.calibrationResult) {
       const measured = this.calibrationResult;
-      node("p",calibration, `Measured ${measured.recommended.cellSize}px per cell (${measured.mode}). Preview offsets: X ${this.axesDraft.offsetX}px / Y ${this.axesDraft.offsetY}px. Not saved yet.`);
+      node("p",calibration, `Preview: ${this.axesDraft.cellWidth ?? canvas.grid.sizeX}px wide × ${this.axesDraft.cellHeight ?? canvas.grid.sizeY}px tall (${measured.mode}). Offsets: X ${this.axesDraft.offsetX}px / Y ${this.axesDraft.offsetY}px. Not saved yet.`);
     }
     const settingsFields = node("div", options, undefined, "gridlines-actions");
-    const size = field("Overlay cell size (px; blank = Foundry)", "number", settingsFields, draft.cellSize == null ? "" : String(draft.cellSize));
-    size.min="10";size.max="2000";size.step="1";
-    size.placeholder=`Native ${canvas.grid.sizeX}px`;
+    const width = field("Cell width (px; blank = Foundry)", "number", settingsFields, draft.cellWidth == null ? "" : String(draft.cellWidth));
+    const height = field("Cell height (px; blank = Foundry)", "number", settingsFields, draft.cellHeight == null ? "" : String(draft.cellHeight));
+    for(const ctl of [width,height]) {ctl.min="10";ctl.max="2000";ctl.step=".1";}
+    width.placeholder=`Native ${canvas.grid.sizeX}px`;
+    height.placeholder=`Native ${canvas.grid.sizeY}px`;
+    const linkRow=node("label",options,undefined,"gridlines-check");
+    const link=node("input",linkRow);link.type="checkbox";link.checked=draft.linkCellDimensions;
+    node("span",linkRow,"Link width and height (square cells)");
     const ox=field("Offset X (px)","number",settingsFields,String(draft.offsetX));
     const oy=field("Offset Y (px)","number",settingsFields,String(draft.offsetY));
     ox.min=oy.min="-20000";ox.max=oy.max="20000";ox.step=oy.step="1";
@@ -314,14 +319,25 @@ export class GridlinesPanel {
     node("span",visibleRow,"Show Gridlines guides");
     const value=()=>({
       ...this.axesDraft,
-      cellSize: size.value.trim()==="" ? null : Number(size.value),
+      // Store independent dimensions. Clearing the deprecated scalar prevents
+      // a legacy size from unexpectedly overriding a cleared width or height.
+      cellSize:null,
+      cellWidth: width.value.trim()==="" ? null : Number(width.value),
+      cellHeight: height.value.trim()==="" ? null : Number(height.value),
+      linkCellDimensions: link.checked,
       offsetX: Number(ox.value), offsetY:Number(oy.value),
       majorEvery:Number(major.value),minorDivisions:Number(divisions.value),
       majorWidth:Number(majorWidth.value),minorWidth:Number(minorWidth.value),
       color:lineColor.value,alpha:Number(lineAlpha.value)/100,
       coordinateScope:scope.value,labels:labels.checked,enabled:showLines.checked
     });
-    const onPreview=()=>{
+    const onPreview=(source=null)=>{
+      if (link.checked) {
+        // When linked, either field drives the other; when unlinked, both keep
+        // their own values. Switching the link on uses current width.
+        if (source===height) width.value=height.value;
+        else if (source===width || source===link) height.value=width.value;
+      }
       try {
         const next=validateAxes(value());
         this.axesDraft=next;
@@ -329,15 +345,15 @@ export class GridlinesPanel {
         if (this.overlay.geometryPreviewPending) this.overlay.setSelecting(false);
       } catch { /* Intermediate invalid numeric input: wait for complete value. */ }
     };
-    for(const ctl of [size,ox,oy,major,divisions,majorWidth,minorWidth,lineColor,scope,labels,showLines,lineAlpha])
-      ctl.addEventListener(ctl.type==="checkbox"||ctl.tagName?.toLowerCase()==="select"?"change":"input",onPreview);
+    for(const ctl of [width,height,link,ox,oy,major,divisions,majorWidth,minorWidth,lineColor,scope,labels,showLines,lineAlpha])
+      ctl.addEventListener(ctl.type==="checkbox"||ctl.tagName?.toLowerCase()==="select"?"change":"input",()=>onPreview(ctl));
     const locationAffected=()=>{
       const next=validateAxes(value());
-      return overlayGeometryChanged(savedAxes,next,Number(canvas.grid.sizeX)) ||
+      return overlayGeometryChanged(savedAxes,next,Number(canvas.grid.sizeX),Number(canvas.grid.sizeY)) ||
         savedAxes.majorEvery !== next.majorEvery || savedAxes.coordinateScope !== next.coordinateScope;
     };
     if (state.formats.length || state.namedRanges.length)
-      node("p",options,"This Scene already has formatted cells or named ranges. Moving the grid changes their map positions; picking a new A1 changes coordinate labels and Go To addresses. Saved fine-cell indices and IDs remain unchanged. Back up the Scene/world before saving changes.");
+      node("p",options,"This Scene already has formatted cells or named ranges. Changing grid width, height, or position changes their map coverage; picking A1 changes coordinate labels and Go To addresses. Saved fine-cell indices and IDs remain unchanged. Back up the Scene/world before saving changes.");
     const backupRow=node("label",options,undefined,"gridlines-check");
     const backup=node("input",backupRow);backup.type="checkbox";
     node("span",backupRow,"I have a recoverable backup and approve moving existing overlay locations if geometry changes");
@@ -367,7 +383,7 @@ export class GridlinesPanel {
       this.overlay.setPreviewAxes(this.axesDraft);
       this.refresh();
     },actions);
-    node("small",options,`Foundry native grid: ${canvas.grid.sizeX}px. Major axes default every 10 overlay cells; five subdivisions produce four interior minor lines. Gridline color, opacity, and thickness preview as you change them.`);
+    node("small",options,`Foundry native movement grid: ${canvas.grid.sizeX}×${canvas.grid.sizeY}px (unchanged). AFT Gridlines+ overlay cells may be rectangular. Major axes default every 10 overlay cells, with five minor divisions. All changes preview before Save.`);
 
     const selectionTools = node("div", root, undefined, "gridlines-section gridlines-actions");
     button(this.overlay.selecting ? "Stop Selecting Cells" : "Select Cells on Map", () => this.run(() => {

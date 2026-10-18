@@ -8,7 +8,10 @@ const MAX_FORMATS = 1000;
 
 export const DEFAULT_AXES = Object.freeze({
   enabled: true, labels: true, majorEvery: 10, minorDivisions: 5,
-  cellSize: null, offsetX: 0, offsetY: 0,
+  // cellSize is the legacy v0.1.5 square dimension. Keep it for reading old
+  // Scene flags, but prefer the independent width/height on new saves.
+  cellSize: null, cellWidth: null, cellHeight: null, linkCellDimensions: true,
+  offsetX: 0, offsetY: 0,
   a1Row: 0, a1Col: 0,
   color: "#65baff", alpha: .65, majorWidth: 2, minorWidth: 1, coordinateScope: "major"
 });
@@ -16,7 +19,13 @@ export const DEFAULT_AXES = Object.freeze({
 /** Optional axis fields maintain v0.1.1 Scene flags without a migration. */
 export function normalizeAxes(value = {}) {
   const prior = (value && Object.keys(value).length > 0 && value.coordinateScope === undefined);
-  return {...DEFAULT_AXES, ...(value ?? {}), ...(prior ? {coordinateScope: "cell"} : {})};
+  const raw = value ?? {};
+  const normalized = {...DEFAULT_AXES, ...raw, ...(prior ? {coordinateScope: "cell"} : {})};
+  // Old Scenes store only cellSize. Null on a new axis means native sizing;
+  // on an old Scene it inherits the legacy dimension until the GM saves.
+  normalized.cellWidth = raw.cellWidth ?? raw.cellSize ?? null;
+  normalized.cellHeight = raw.cellHeight ?? raw.cellSize ?? null;
+  return normalized;
 }
 
 export function validateAxes(value) {
@@ -28,7 +37,13 @@ export function validateAxes(value) {
     throw new Error("Major interval must be 1–200 cells, minor divisions 1–20");
   if (!integer(a.a1Row, 0, 99999) || !integer(a.a1Col, 0, 99999))
     throw new Error("A1 anchor must be a valid nonnegative grid cell");
-  if (!(a.cellSize === null || finite(a.cellSize, 10, 2000))) throw new Error("Gridlines cell size must be 10–2000 pixels");
+  if (!(a.cellSize === null || finite(a.cellSize, 10, 2000))) throw new Error("Legacy cell size must be 10–2000 pixels");
+  if (!(a.cellWidth === null || finite(a.cellWidth, 10, 2000)) ||
+      !(a.cellHeight === null || finite(a.cellHeight, 10, 2000)))
+    throw new Error("Gridlines cell width and height must each be 10–2000 pixels");
+  if (typeof a.linkCellDimensions !== "boolean") throw new Error("Invalid linked cell setting");
+  if (a.linkCellDimensions && a.cellWidth !== a.cellHeight)
+    throw new Error("Linked cells require equal width and height; unlink them for rectangles");
   if (!finite(a.offsetX, -20000, 20000) || !finite(a.offsetY, -20000, 20000)) throw new Error("Gridlines offset is outside the supported range");
   if (!/^#[0-9a-f]{6}$/i.test(a.color)) throw new Error("Invalid gridline color");
   if (!finite(a.alpha, 0, 1) || !finite(a.majorWidth, .25, 20) || !finite(a.minorWidth, .25, 20))
@@ -36,11 +51,13 @@ export function validateAxes(value) {
   return a;
 }
 
-export function overlayGeometryChanged(before, after, nativeSize) {
+export function overlayGeometryChanged(before, after, nativeSizeX, nativeSizeY = nativeSizeX) {
   const a = normalizeAxes(before), b = normalizeAxes(after);
-  const effective = x => x.cellSize ?? nativeSize;
+  const effectiveX = x => x.cellWidth ?? nativeSizeX;
+  const effectiveY = x => x.cellHeight ?? nativeSizeY;
   // A1 changes coordinate meanings and major-line positions, even though fine-cell geometry stays put.
-  return effective(a) !== effective(b) || a.offsetX !== b.offsetX || a.offsetY !== b.offsetY ||
+  return effectiveX(a) !== effectiveX(b) || effectiveY(a) !== effectiveY(b) ||
+    a.offsetX !== b.offsetX || a.offsetY !== b.offsetY ||
     a.a1Row !== b.a1Row || a.a1Col !== b.a1Col;
 }
 

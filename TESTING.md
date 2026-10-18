@@ -1,6 +1,18 @@
-# AFT Gridlines+ v0.1.5 — test report
+# AFT Gridlines+ v0.1.6 — test report
 
-**Owner:** G03 — Gridlines, technical ID `gridlines`. **Verified source input:** GitHub `rebsiot/gridlines` commit `9a582daa371372979e34ee045cb82b732b9e84f0`, exactly matching the local v0.1.4 ZIP (Git blob SHA `587736260c021c3919cccfd4f29af46b81fcad7c`). The actual installed version on the user's Foundry instance has not been inspected.
+**Owner:** G03 — Gridlines, technical ID `gridlines`. **Source input:** GitHub `rebsiot/gridlines` default-branch commit `a3812f17d2e9d4885ee1d91b419e51654b7653a9` (v0.1.5), checked against the mounted v0.1.5 source and manifest. The actual installed version on the user's Foundry instance has **not** been inspected.
+
+## v0.1.6 change and checks (2026-10-18)
+
+- Added separate width/height with opt-in linked dimensions. Existing square `cellSize` values from earlier flags continue resolving as squares without automatic writes or schema migrations.
+- All overlay geometry consumers use independent sizeX/sizeY: coordinate lookup, rectangle extents, A1 placement, shading/selection, named range Go To and major/minor line spacing. Foundry's native movement grid is not modified.
+- 10×10 / 5×5 / 1×1 calibration accepts rectangular guide bounds and automatically unlinks measured unequal axes. In unlinked mode, a one-axis guide updates only that axis.
+- UI live preview and Discard never write flags. Saving a width/height change with saved named ranges/formats requires the existing backup acknowledgment; indices, IDs and native Scene settings remain unchanged.
+- Automated/mock result: **39 Node tests passed**, zero failed. New `tests/rectangular.test.mjs` covers legacy source data, unequal dimensions, major/minor SVG geometry, independent coordinate/navigation, rectangular calibration, preview, confirmation, persistence and rollback behavior.
+- **Live Foundry v14 testing:** not run. In a backed-up test world, set width 120 and height 80 with Link disabled, drag the grid, choose A1, verify visual guides and `cell:` navigation, Save and reload, then compare native token snapping and persisted named ranges. Use Discard first to prove no Scene writes.
+- **Upgrade:** preserve a backup of `Data/modules/gridlines` and a recoverable world snapshot; update v0.1.5 through the same manifest, enable in the test world, and hard-refresh. The version remains `gridlines` ID with no Actor/Token/Scene-document migration other than explicit GM saves to the existing module Scene flag.
+- **Rollback:** retain the v0.1.5 installable ZIP. The old code does not understand `cellWidth`/`cellHeight`; it will not faithfully show saved rectangular overlays. To restore the previous overlay geometry, restore the corresponding test-world snapshot as well as the old module files, not just the ZIP.
+- **Documentation sync:** the Project inventory `103` still describes G03 as concept only and needs an evidence-based source/release status update. The G03 architecture/handoff can record this source commit and mock results at next permitted handoff synchronization; no separate cross-component code changes were made.
 
 ## v0.1.5 change and checks (2026-10-18)
 

@@ -101,18 +101,20 @@ export function squareResolver(grid, sceneRect) {
 }
 
 
-/** G03 overlay grid, separate from Foundry's native movement/snap grid.
- * Uses native cell geometry as its unchanged default, while allowing GM-only
- * overlay pixel spacing and origin offsets without mutating Foundry Scene grid.
- * Returns the same interface as squareResolver for all consumers.
+/** G03 rectangular overlay grid, separate from Foundry's movement/snap grid.
+ * Its native-aligned default is square, but cellWidth/cellHeight can diverge;
+ * callers must use sizeX for columns and sizeY for rows. No Scene grid writes.
  */
 export function overlayResolver(grid, sceneRect, axes = {}) {
   const native = squareResolver(grid, sceneRect);
   const base = native.bounds({row: 0, col: 0});
-  const size = axes.cellSize == null ? Number(grid.sizeX) : Number(axes.cellSize);
+  // Independently scaled rectangular cells, anchored to the same native
+  // Foundry square-grid origin. No native movement/snapping settings change.
+  const sizeX = axes.cellWidth == null ? (axes.cellSize ?? Number(grid.sizeX)) : Number(axes.cellWidth);
+  const sizeY = axes.cellHeight == null ? (axes.cellSize ?? Number(grid.sizeY)) : Number(axes.cellHeight);
   const offsetX = Number(axes.offsetX ?? 0);
   const offsetY = Number(axes.offsetY ?? 0);
-  if (!Number.isFinite(size) || size < 10 || size > 2000 ||
+  if (![sizeX, sizeY].every(s => Number.isFinite(s) && s >= 10 && s <= 2000) ||
       !Number.isFinite(offsetX) || !Number.isFinite(offsetY) ||
       Math.abs(offsetX) > 20000 || Math.abs(offsetY) > 20000) {
     throw new Error("Invalid Gridlines overlay size or offset");
@@ -122,14 +124,14 @@ export function overlayResolver(grid, sceneRect, axes = {}) {
   const bounds = ({row, col}) => {
     if (!Number.isInteger(row) || !Number.isInteger(col) || row < 0 || col < 0 || row > MAX_INDEX || col > MAX_INDEX)
       throw new Error("Invalid Gridlines cell");
-    const x = origin.x + col * size;
-    const y = origin.y + row * size;
-    return {x, y, right: x + size, bottom: y + size};
+    const x = origin.x + col * sizeX;
+    const y = origin.y + row * sizeY;
+    return {x, y, right: x + sizeX, bottom: y + sizeY};
   };
   const locate = p => {
     if (!inside(p)) return null;
-    const row = Math.floor((p.y - origin.y) / size);
-    const col = Math.floor((p.x - origin.x) / size);
+    const row = Math.floor((p.y - origin.y) / sizeY);
+    const col = Math.floor((p.x - origin.x) / sizeX);
     if (row < 0 || col < 0 || row > MAX_INDEX || col > MAX_INDEX) return null;
     return {row, col};
   };
@@ -139,7 +141,7 @@ export function overlayResolver(grid, sceneRect, axes = {}) {
     return {x: a.x, y: a.y, right: b.right, bottom: b.bottom};
   };
   return {
-    origin, size, locate, inside, bounds, rangeBounds,
+    origin, sizeX, sizeY, locate, inside, bounds, rangeBounds,
     vertices: c => {
       const b = bounds(c);
       return [{x:b.x,y:b.y},{x:b.right,y:b.y},{x:b.right,y:b.bottom},{x:b.x,y:b.bottom}];

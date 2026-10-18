@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.6 — 2026-10-18 (experimental alpha)
+
+- Added **Cell width** and **Cell height** inputs in Grid Setup. Uncheck **Link width and height (square cells)** to make rectangular overlay cells, e.g. 120 px wide by 80 px tall; recheck to synchronize dimensions. Both values preview on the map before Save.
+- Updated the shared grid resolver, major/minor line rendering, labels, shading, selections, A1 origin and Go To navigation to use X and Y dimensions independently.
+- A 10×10, 5×5 or 1×1 corner-to-corner calibration guide now accepts **rectangular printed cells**, measuring width and height separately and automatically unlinking unequal sizes. In unlinked mode a horizontal guide changes only width; a vertical guide changes only height.
+- Existing v0.1.5 and older Scene flags with scalar `cellSize` still read as **square** cells; they are not automatically rewritten. Saved names, formatting IDs, A1 references and native Scene geometry are retained.
+- Changing width or height with saved formatting/names requires the existing recoverable-backup confirmation. Discard does not write Scene data. Gridlines does **not** change the native Foundry movement/snap grid.
+- Tests: 39 Node/mock tests passed and source/ZIP integrity checked locally; **real Foundry v14 UI not tested**. On rollback to v0.1.5, rectangular dimensions cannot be displayed correctly. Restore the matching Scene backup to revert saved grid geometry.
+
 ## 0.1.5 — 2026-10-18 (experimental alpha)
 
 - Renamed the Foundry package title to **AFT Gridlines+** so it sorts and identifies consistently in Setup and Manage Modules; the native Foundry checkbox continues to show whether it is enabled in that world.

@@ -119,7 +119,8 @@ export class GridlinesOverlay {
   setPreviewAxes(value) { this.previewAxes = value ? normalizeAxes(value) : null; this.schedule(); }
   get axes() { return normalizeAxes(this.previewAxes ?? this.sceneState?.axes); }
   get geometryPreviewPending() {
-    return this.previewAxes && this.sceneState && overlayGeometryChanged(this.sceneState.axes, this.previewAxes, Number(canvas.grid?.sizeX));
+    return this.previewAxes && this.sceneState && overlayGeometryChanged(this.sceneState.axes, this.previewAxes,
+      Number(canvas.grid?.sizeX), Number(canvas.grid?.sizeY));
   }
   setVisible(visible) { this.localVisible = Boolean(visible); this.schedule(); }
   setSelecting(active) {
@@ -366,28 +367,29 @@ export class GridlinesOverlay {
     const visibleWorld = clipBounds({x: Math.min(viewportA.x, viewportB.x), y: Math.min(viewportA.y, viewportB.y), right: Math.max(viewportA.x, viewportB.x), bottom: Math.max(viewportA.y, viewportB.y)}, sceneRect);
     if (!visibleWorld) return;
     const origin = resolver.origin;
-    const size = resolver.size;
-    const majorOrigin = {x:origin.x+axes.a1Col*size,y:origin.y+axes.a1Row*size};
+    const {sizeX, sizeY} = resolver;
+    const majorOrigin = {x:origin.x+axes.a1Col*sizeX,y:origin.y+axes.a1Row*sizeY};
     const status = this.pending;
     const screenA = toScreen({x: visibleWorld.x, y: visibleWorld.y});
     const screenB = toScreen({x: visibleWorld.right, y: visibleWorld.bottom});
     // All guides are calculated from the same preview-aware origin/spacing as
     // hit-testing, formatted cell bounds, and named range navigation.
     if (axes.enabled && this.localVisible) {
-      const step = size * axes.majorEvery / axes.minorDivisions;
-      const xMin = Math.ceil((visibleWorld.x - majorOrigin.x) / step - 1e-9);
-      const xMax = Math.floor((visibleWorld.right - majorOrigin.x) / step + 1e-9);
-      const yMin = Math.ceil((visibleWorld.y - majorOrigin.y) / step - 1e-9);
-      const yMax = Math.floor((visibleWorld.bottom - majorOrigin.y) / step + 1e-9);
+      const stepX = sizeX * axes.majorEvery / axes.minorDivisions;
+      const stepY = sizeY * axes.majorEvery / axes.minorDivisions;
+      const xMin = Math.ceil((visibleWorld.x - majorOrigin.x) / stepX - 1e-9);
+      const xMax = Math.floor((visibleWorld.right - majorOrigin.x) / stepX + 1e-9);
+      const yMin = Math.ceil((visibleWorld.y - majorOrigin.y) / stepY - 1e-9);
+      const yMax = Math.floor((visibleWorld.bottom - majorOrigin.y) / stepY + 1e-9);
       if (xMax - xMin <= LIMIT_AXIS_LINES && yMax - yMin <= LIMIT_AXIS_LINES) {
         const minor = [], major = [];
         for (let n = xMin; n <= xMax; n++) {
-          const x = majorOrigin.x + n * step;
+          const x = majorOrigin.x + n * stepX;
           const p = toScreen({x, y:visibleWorld.y});
           (n % axes.minorDivisions === 0 ? major : minor).push(`M${p.x.toFixed(2)} ${screenA.y.toFixed(2)}V${screenB.y.toFixed(2)}`);
         }
         for (let n = yMin; n <= yMax; n++) {
-          const y = majorOrigin.y + n * step;
+          const y = majorOrigin.y + n * stepY;
           const p = toScreen({x:visibleWorld.x, y});
           (n % axes.minorDivisions === 0 ? major : minor).push(`M${screenA.x.toFixed(2)} ${p.y.toFixed(2)}H${screenB.x.toFixed(2)}`);
         }
@@ -399,21 +401,24 @@ export class GridlinesOverlay {
         // by default. Existing v0.1.1 Scenes keep absolute-cell labels to
         // avoid silently changing their previously established coordinates.
         if (axes.labels) {
-          const firstMajorX = Math.max(0, Math.ceil((visibleWorld.x - majorOrigin.x)/(size * axes.majorEvery) - 1e-9));
-          const lastMajorX = Math.floor((visibleWorld.right - majorOrigin.x)/(size * axes.majorEvery) + 1e-9);
-          const firstMajorY = Math.max(0, Math.ceil((visibleWorld.y - majorOrigin.y)/(size * axes.majorEvery) - 1e-9));
-          const lastMajorY = Math.floor((visibleWorld.bottom - majorOrigin.y)/(size * axes.majorEvery) + 1e-9);
-          const screenStep = Math.abs(toScreen({x:origin.x + size * axes.majorEvery,y:origin.y}).x - toScreen({x:origin.x,y:origin.y}).x);
-          if (screenStep > 40) {
+          const firstMajorX = Math.max(0, Math.ceil((visibleWorld.x - majorOrigin.x)/(sizeX * axes.majorEvery) - 1e-9));
+          const lastMajorX = Math.floor((visibleWorld.right - majorOrigin.x)/(sizeX * axes.majorEvery) + 1e-9);
+          const firstMajorY = Math.max(0, Math.ceil((visibleWorld.y - majorOrigin.y)/(sizeY * axes.majorEvery) - 1e-9));
+          const lastMajorY = Math.floor((visibleWorld.bottom - majorOrigin.y)/(sizeY * axes.majorEvery) + 1e-9);
+          const screenStepX = Math.abs(toScreen({x:origin.x + sizeX * axes.majorEvery,y:origin.y}).x - toScreen({x:origin.x,y:origin.y}).x);
+          const screenStepY = Math.abs(toScreen({x:origin.x,y:origin.y+sizeY * axes.majorEvery}).y - toScreen({x:origin.x,y:origin.y}).y);
+          if (screenStepX > 40) {
             for (let majorCol = firstMajorX; majorCol <= lastMajorX && majorCol - firstMajorX <= 80; majorCol++) {
-              const atX = majorOrigin.x + majorCol * axes.majorEvery * size;
+              const atX = majorOrigin.x + majorCol * axes.majorEvery * sizeX;
               const at = toScreen({x:atX, y:visibleWorld.y});
               const lbl = svgElement("text", {x:at.x + 8, y:screenA.y + 15, class:"gridlines-axis-label", "text-anchor":"start"});
               lbl.textContent = axes.coordinateScope === "major" ? columnName(majorCol) : columnName(majorCol*axes.majorEvery);
               this.svg.append(lbl);
             }
+          }
+          if (screenStepY > 40) {
             for (let majorRow = firstMajorY; majorRow <= lastMajorY && majorRow - firstMajorY <= 80; majorRow++) {
-              const atY = majorOrigin.y + majorRow * axes.majorEvery * size;
+              const atY = majorOrigin.y + majorRow * axes.majorEvery * sizeY;
               const at = toScreen({x:visibleWorld.x, y:atY});
               const lbl = svgElement("text", {x:screenA.x + 6, y:at.y + 27, class:"gridlines-axis-label", "text-anchor":"start"});
               lbl.textContent = String(1 + (axes.coordinateScope === "major" ? majorRow : majorRow*axes.majorEvery));

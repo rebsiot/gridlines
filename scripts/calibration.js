@@ -1,6 +1,6 @@
 /** Non-persistent calibration guide math. Does not touch Foundry's Scene grid.
- * Drag across the outer corners of a known N x N printed square, or draw a
- * straight N-cell horizontal/vertical line to calibrate only that axis.
+ * Drag across the outer corners of an N by N block of printed cells, which
+ * may be rectangular, or measure one axis with a straight line.
  */
 export const CALIBRATION_PRESETS = Object.freeze([10, 5, 1]);
 const roundPixel = value => Math.round(value * 100) / 100;
@@ -33,26 +33,42 @@ export function calibrateGuide({from, to, cells, nativeOrigin, nativeSize, axes 
   const r = guideBounds(from, to);
   if (Math.max(r.width, r.height) < cells * 10)
     throw new Error(`Drag across ${cells} complete printed map cells before releasing`);
-  const ratio = Math.min(r.width, r.height) / Math.max(r.width, r.height);
-  let mode, size;
-  if (ratio <= 0.12) {
+  let mode;
+  // A nearly straight pointer gesture is a one-axis measurement. A true
+  // rectangular guide, even with markedly different sides, sets both axes.
+  if (Math.min(r.width, r.height) <= Math.max(8, Math.max(r.width, r.height) * 0.015)) {
     mode = r.width >= r.height ? "horizontal" : "vertical";
-    size = Math.max(r.width, r.height) / cells;
-  } else if (Math.abs(r.width - r.height) / ((r.width + r.height) / 2) <= 0.08) {
-    mode = "square";
-    size = (r.width + r.height) / (2 * cells);
   } else {
-    throw new Error("Draw a straight horizontal/vertical line, or a nearly square corner-to-corner guide");
+    mode = "rectangle";
   }
-  size = roundPixel(size);
-  if (!(size >= 10 && size <= 2000)) throw new Error("Measured cell size must be 10–2000 pixels");
+  let width = roundPixel(r.width / cells);
+  let height = roundPixel(r.height / cells);
+  const nearlySquare = Math.abs(r.width - r.height) / ((r.width + r.height) / 2) <= .08;
+  const linked = axes.linkCellDimensions !== false;
+  if (mode === "rectangle" && linked && nearlySquare) {
+    mode = "square";
+    width = height = roundPixel((r.width + r.height) / (2 * cells));
+  }
+  if (mode === "horizontal") height = width;
+  if (mode === "vertical") width = height;
+  const measured = mode === "horizontal" ? [width] : mode === "vertical" ? [height] : [width,height];
+  if (measured.some(x => !(x >= 10 && x <= 2000)))
+    throw new Error("Measured cell width and height must each be 10–2000 pixels");
   const oldOrigin = {
     x: nativeOrigin.x + Number(axes.offsetX ?? 0),
     y: nativeOrigin.y + Number(axes.offsetY ?? 0)
   };
-  const recommended = {cellSize: size};
-  if (mode !== "vertical") recommended.offsetX = alignedOffset(r.left, size, nativeOrigin.x, oldOrigin.x);
-  if (mode !== "horizontal") recommended.offsetY = alignedOffset(r.top, size, nativeOrigin.y, oldOrigin.y);
+  // A linked one-axis guide retains the prior square behavior; unlinked
+  // measurement leaves the other axis unchanged. Rectangles automatically
+  // unlink unless their sides were deliberately measured equal.
+  const recommended = {cellSize: null};
+  if (mode !== "vertical") recommended.cellWidth = width;
+  if (mode !== "horizontal") recommended.cellHeight = height;
+  if (mode === "horizontal" && linked) recommended.cellHeight = width;
+  if (mode === "vertical" && linked) recommended.cellWidth = height;
+  if (mode === "rectangle") recommended.linkCellDimensions = false;
+  if (mode !== "vertical") recommended.offsetX = alignedOffset(r.left, width, nativeOrigin.x, oldOrigin.x);
+  if (mode !== "horizontal") recommended.offsetY = alignedOffset(r.top, height, nativeOrigin.y, oldOrigin.y);
   return {
     mode, cells, guide: r, recommended,
     measuredX: roundPixel(r.width / cells), measuredY: roundPixel(r.height / cells),

@@ -2,8 +2,8 @@
   "id": "gridlines",
   "type": "module",
   "title": "AFT Gridlines+",
-  "description": "AFT Gridlines+ (experimental alpha): drag-to-align grid overlay, choose A1, use 10x10/5x5/1x1 calibration guides, shade cells and save named ranges. Test-world use only.",
-  "version": "0.1.5",
+  "description": "AFT Gridlines+ (experimental alpha): rectangular or square visual grid cells, independent width/height and X/Y offsets, drag-to-align, A1 and calibration guides, named ranges. Test-world use only.",
+  "version": "0.1.6",
   "authors": [
     {
       "name": "AFT (Advanced Features & Tools)"
@@ -20,7 +20,7 @@
   ],
   "url": "https://github.com/rebsiot/gridlines",
   "manifest": "https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json",
-  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.5-alpha.zip",
+  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.6-alpha.zip",
   "readme": "README.md",
   "changelog": "CHANGELOG.md",
   "bugs": "https://github.com/rebsiot/gridlines/issues"
