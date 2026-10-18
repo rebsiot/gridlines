@@ -16,6 +16,7 @@ export const DEFAULT_AXES = Object.freeze({
   a1Row: 0, a1Col: 0,
   color: "#65baff", alpha: .65, majorWidth: 2, minorWidth: 1, coordinateScope: "major",
   colLabelSize: 11, rowLabelSize: 11, subLabelSize: 10,
+  colLabelPosition: "top", rowLabelPosition: "left",
   colLabelColor: "#ffffff", rowLabelColor: "#ffffff", subLabelColor: "#fef3c7"
 });
 
@@ -61,6 +62,9 @@ export function validateAxes(value) {
   if (!/^#[0-9a-f]{6}$/i.test(a.color)) throw new Error("Invalid gridline color");
   if (!finite(a.alpha, 0, 1) || !finite(a.majorWidth, .25, 20) || !finite(a.minorWidth, .25, 20))
     throw new Error("Invalid gridline opacity or line width");
+  if (!["top", "bottom", "both", "off"].includes(a.colLabelPosition) ||
+      !["left", "right", "both", "off"].includes(a.rowLabelPosition))
+    throw new Error("Invalid row or column label placement");
   if (![a.colLabelSize,a.rowLabelSize,a.subLabelSize].every(n => integer(n, 7, 48)))
     throw new Error("Column, row and subcell label sizes must be 7–48px");
   if (![a.colLabelColor,a.rowLabelColor,a.subLabelColor].every(c => /^#[0-9a-f]{6}$/i.test(c)))
@@ -114,6 +118,7 @@ export function newState(snapshot) {
     geometryRevision: 1,
     baseline: snapshot,
     axes: {...DEFAULT_AXES},
+    playerGridVisible: false, // Explicit GM opt-in, independent from per-shading visibility.
     formats: [],
     namedRanges: []
   };
@@ -126,6 +131,12 @@ export function validateState(value) {
   if (!Number.isInteger(value.revision) || value.revision < 1 || !Number.isInteger(value.geometryRevision) || value.geometryRevision < 1) throw new Error("Invalid Gridlines revision");
   if (value.formats.length > MAX_FORMATS || value.namedRanges.length > MAX_RANGES) throw new Error("Gridlines Scene data exceeds the prototype limits");
   validateAxes(value.axes);
+  if (value.playerGridVisible !== undefined && typeof value.playerGridVisible !== "boolean")
+    throw new Error("Invalid player grid visibility setting");
+  for (const layer of value.formats) {
+    if (layer.playerVisible !== undefined && typeof layer.playerVisible !== "boolean")
+      throw new Error("Invalid shading player visibility setting");
+  }
   return value;
 }
 
@@ -184,7 +195,7 @@ export function addNamedRange(state, name, range, id) {
 export function addFill(state, range, color, opacity, id) {
   if (state.formats.length >= MAX_FORMATS) throw new Error("This Scene has reached the formatting limit");
   if (!/^#[0-9A-Fa-f]{6}$/.test(color) || !Number.isFinite(opacity) || opacity < 0 || opacity > 1) throw new Error("Invalid fill style");
-  state.formats.push({id, range: normalizeRange(range.from, range.to), fill: color, opacity});
+  state.formats.push({id, range: normalizeRange(range.from, range.to), fill: color, opacity, playerVisible: false});
 }
 
 /** Split a rectangle around a removed intersection; no grid documents are created. */
@@ -233,6 +244,44 @@ export function clearShadingInSelection(state, selected, makeId) {
   }
   state.formats = remaining;
   return preview;
+}
+
+/** GM opt-in publication of geometry and labels on a per-Scene basis. */
+export function setPlayerGridVisible(state, visible) {
+  if (typeof visible !== "boolean") throw new Error("Player grid visibility must be on or off");
+  state.playerGridVisible = visible;
+}
+
+/** A shading layer is never automatically published: old records default to hidden. */
+export function setShadingPlayerVisible(state, id, visible) {
+  if (typeof visible !== "boolean") throw new Error("Shading player visibility must be on or off");
+  const layer = state.formats.find(f => f.id === id);
+  if (!layer) throw new Error("Shading layer no longer exists; refresh Gridlines+");
+  layer.playerVisible = visible;
+}
+
+/**
+ * Player rendering projection. Never expose named-range labels or GM-only shading
+ * through the module's public overlay state/API. The raw Scene flag is NOT an
+ * access-control boundary; genuinely confidential notes do not belong there.
+ * Individual published shades remain visible if coordinate-grid sharing is off.
+ */
+export function projectPlayerView(state) {
+  if (!state) return null;
+  validateState(state);
+  const showGrid = state.playerGridVisible === true;
+  const shading = state.formats.filter(f => f.playerVisible === true);
+  if (!showGrid && !shading.length) return null;
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    revision: state.revision,
+    geometryRevision: state.geometryRevision,
+    baseline: structuredClone(state.baseline),
+    axes: {...normalizeAxes(state.axes), enabled: showGrid && normalizeAxes(state.axes).enabled,
+      labels: showGrid && normalizeAxes(state.axes).labels},
+    formats: shading.map(f => ({range: structuredClone(f.range), fill: f.fill, opacity: f.opacity})),
+    namedRanges: []
+  };
 }
 
 /** Remove a single saved shading layer by ID; no other overlays or ranges change. */

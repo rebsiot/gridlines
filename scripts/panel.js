@@ -1,7 +1,8 @@
 import {parseRange, normalizeRange, formatRange, overlayResolver, squareResolver, parseMajorRange, formatMajorRange, parseAnchoredFineRange, parseDisplayedRange, formatDisplayedRange} from "./coordinates.js";
 import {calibrateGuide, CALIBRATION_PRESETS} from "./calibration.js";
 import {geometrySnapshot, alignmentStatus, addFill, addNamedRange, normalizeAxes, validateAxes, overlayGeometryChanged,
-  previewClearShading, clearShadingInSelection, clearShadingLayer, clearAllShading, updateShadingLayer} from "./model.js";
+  previewClearShading, clearShadingInSelection, clearShadingLayer, clearAllShading, updateShadingLayer,
+  setPlayerGridVisible, setShadingPlayerVisible} from "./model.js";
 import {planShadingRegions, createShadingRegions, existingShadeRegionIds, MAX_REGION_BATCH} from "./region-bridge.js";
 import {NativeGridDisplay, copyFoundryGrid, planNativeGridMatch} from "./native-grid.js";
 
@@ -384,6 +385,18 @@ export class GridlinesPanel {
     }), visibilityRow);
     node("small", visibility, "Hiding Foundry grid is temporary and affects only this GM's browser. Token snapping still uses Foundry's grid. Closing the manager restores native grid visibility.");
 
+    const sharing = node("div", root, undefined, "gridlines-section gridlines-player-sharing");
+    node("strong", sharing, "Player visibility (GM-controlled)");
+    node("p", sharing, "Share the Gridlines+ coordinate grid with players in this Scene. Every shading layer has an independent Player Visible toggle in Shading Layers below; old and new layers are GM Only until shared. Neither setting changes Foundry's native movement grid.");
+    const sharingActions = node("div", sharing, undefined, "gridlines-actions");
+    const playerGridOn = state.playerGridVisible === true;
+    button(playerGridOn ? "Hide Coordinate Grid from Players" : "Show Coordinate Grid to Players", () => this.run(async () => {
+      await this.service.edit(scene, state.revision, next => setPlayerGridVisible(next, !playerGridOn));
+      this.announce(playerGridOn ? "Coordinate grid hidden from players" : "Coordinate grid shown to players on this Scene");
+    }), sharingActions);
+    node("small", sharing, `Player coordinate grid: ${playerGridOn ? "VISIBLE" : "HIDDEN"}. Player-visible shading: ${state.formats.filter(f => f.playerVisible === true).length} of ${state.formats.length}. Existing layers stay hidden until explicitly shared.`);
+    node("small", sharing, "Important: This SVG overlay is not masked by Foundry fog or token vision. Do not publish secret markings. Scene flags, including named-range names, are not private storage; this module does not display named ranges to players.");
+
     const options = node("details", root, undefined, "gridlines-section");
     options.open = true;
     node("summary", options, "Grid Setup — live preview");
@@ -521,7 +534,22 @@ export class GridlinesPanel {
     const colLabelColor = field("Column letter color","color",fontFields,draft.colLabelColor);
     const rowLabelColor = field("Row number color","color",fontFields,draft.rowLabelColor);
     const subLabelColor = field("Subcell label color","color",fontFields,draft.subLabelColor);
-    node("small",labelSettings,"Row and column colors are independent. Label outlines automatically contrast with the chosen font color over map artwork.");
+    const placementFields = node("div",labelSettings,undefined,"gridlines-actions");
+    const colPlacementWrap=node("label",placementFields,undefined,"gridlines-field");
+    node("span",colPlacementWrap,"Column letters placement");
+    const colPlacement=node("select",colPlacementWrap);
+    for (const [key,name] of [["top","Top"],["bottom","Bottom"],["both","Top and Bottom"],["off","Off"]]) {
+      const option=node("option",colPlacement,name);option.value=key;
+    }
+    colPlacement.value=draft.colLabelPosition;
+    const rowPlacementWrap=node("label",placementFields,undefined,"gridlines-field");
+    node("span",rowPlacementWrap,"Row numbers placement");
+    const rowPlacement=node("select",rowPlacementWrap);
+    for (const [key,name] of [["left","Left"],["right","Right"],["both","Left and Right"],["off","Off"]]) {
+      const option=node("option",rowPlacement,name);option.value=key;
+    }
+    rowPlacement.value=draft.rowLabelPosition;
+    node("small",labelSettings,"Column letters may appear at the top, bottom or both edges; row numbers at the left, right or both. Positions follow the visible map viewport for GM and players. Each can also be disabled. Label outlines automatically contrast with their font colors.");
     const scopeWrap=node("label",options,undefined,"gridlines-field");
     node("span",scopeWrap,"Axis coordinate numbering");
     const scope=node("select",scopeWrap);
@@ -553,6 +581,7 @@ export class GridlinesPanel {
       color:lineColor.value,alpha:Number(lineAlpha.value)/100,
       colLabelSize:Number(colLabelSize.value),rowLabelSize:Number(rowLabelSize.value),subLabelSize:Number(subLabelSize.value),
       colLabelColor:colLabelColor.value,rowLabelColor:rowLabelColor.value,subLabelColor:subLabelColor.value,
+      colLabelPosition:colPlacement.value,rowLabelPosition:rowPlacement.value,
       coordinateScope:scope.value,labels:labels.checked,enabled:showLines.checked
     });
     const onPreview=(source=null)=>{
@@ -570,7 +599,7 @@ export class GridlinesPanel {
       } catch { /* Intermediate invalid numeric input: wait for complete value. */ }
     };
     for(const ctl of [width,height,link,ox,oy,major,majorY,divisions,divisionsY,ruler,majorWidth,minorWidth,lineColor,scope,labels,showLines,lineAlpha,
-      colLabelSize,rowLabelSize,subLabelSize,colLabelColor,rowLabelColor,subLabelColor])
+      colLabelSize,rowLabelSize,subLabelSize,colLabelColor,rowLabelColor,subLabelColor,colPlacement,rowPlacement])
       ctl.addEventListener(ctl.type==="checkbox"||ctl.tagName?.toLowerCase()==="select"?"change":"input",()=>onPreview(ctl));
     const locationAffected=()=>{
       const next=validateAxes(value());
@@ -704,7 +733,7 @@ export class GridlinesPanel {
       const top=node("div",item,undefined,"gridlines-shading-title");
       const chip=node("span",top," ","gridlines-color-chip");
       chip.style.backgroundColor=layer.fill;
-      node("span",top,`${layer.label ? `${layer.label} · ` : ""}${visibleAddress(layer.range)} · ${Math.round(layer.opacity*100)}%`);
+      node("span",top,`${layer.label ? `${layer.label} · ` : ""}${visibleAddress(layer.range)} · ${Math.round(layer.opacity*100)}% · ${layer.playerVisible === true ? "Player Visible" : "GM Only"}`);
       const controls=node("div",item,undefined,"gridlines-actions gridlines-shading-buttons");
       button("Locate",()=>this.run(()=>this.locateShading(layer)),controls,{title:"Pan to this shading and flash its outline without changing selection"});
       button("Select",()=>this.run(async()=>{
@@ -713,6 +742,12 @@ export class GridlinesPanel {
         this.announce(`Selected shading ${visibleAddress(layer.range)}`);
       }),controls,{title:"Select exactly this saved shading extent for follow-up actions"});
       button("Configure",()=>this.run(async()=>this.configureShading(layer)),controls);
+      button(layer.playerVisible === true ? "Player Visible: On" : "Player Visible: Off",()=>this.run(async()=>{
+        this.requireSavedGeometry();
+        const nextVisible=layer.playerVisible !== true;
+        await this.service.edit(scene,state.revision,current=>setShadingPlayerVisible(current,layer.id,nextVisible));
+        this.announce(nextVisible ? "Shading now visible to players" : "Shading hidden from players");
+      }),controls,{title:"Independently publish or hide only this shading layer. Existing layers start GM Only."});
       button(regionFound.has(layer.id)?"Region exists":"To Region",()=>this.run(async()=>{
         this.prepareRegionPreview([layer.id]);
       }),controls,{disabled:regionFound.has(layer.id),title:"Preview one native Region using exact Gridlines+ pixel boundaries"});
@@ -796,7 +831,7 @@ export class GridlinesPanel {
       label.textContent = `${range.name} · ${visibleAddress(range.range)}`;
       button("Go", () => this.run(() => this.go(range.name)), item);
     }
-    const footer = node("small", root, "Prototype: GM authoring only. All named locations are stored in Scene flags; do not enter GM secrets. No automation or player broadcast yet.", "gridlines-footer");
+    const footer = node("small", root, "GM authoring; optional player-visible grid and individually published shading. Scene flags are readable data, not secure GM notes. No automation or camera broadcast.", "gridlines-footer");
     if (this.statusText) { const note = node("small", root, this.statusText); note.className = "gridlines-status"; }
     root.scrollTop=priorScroll;
     void footer;

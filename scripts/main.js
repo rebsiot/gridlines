@@ -1,4 +1,4 @@
-import {MODULE_ID, geometrySnapshot, alignmentStatus} from "./model.js";
+import {MODULE_ID, geometrySnapshot, alignmentStatus, projectPlayerView} from "./model.js";
 import {formatAddress, parseAddress, parseRange, formatRange, squareResolver, overlayResolver, parseMajorRange, formatMajorRange, parseDisplayedRange, formatDisplayedRange} from "./coordinates.js";
 import {SceneService} from "./service.js";
 import {GridlinesOverlay} from "./overlay.js";
@@ -20,8 +20,17 @@ let lastWarning = null;
 
 function safeRefresh() {
   try {
-    if (!game.user.isGM || !canvas.ready || !canvas.scene) return;
+    if (!canvas.ready || !canvas.scene) return;
     const state = service.read(canvas.scene);
+    if (!game.user.isGM) {
+      // Do not draw stale overlay coordinates after the native Scene grid changes.
+      // A GM must resolve the existing geometry-review interlock first.
+      const aligned = !state || !alignmentStatus(state, geometrySnapshot(canvas.scene)).pending;
+      overlay.setSceneState(aligned ? projectPlayerView(state) : null);
+      // Player overlays are read-only, receive only explicitly shared shading,
+      // and react to updateScene automatically. Never open GM controls.
+      return;
+    }
     overlay.setSceneState(state);
     const status = state ? alignmentStatus(state, geometrySnapshot(canvas.scene)) : {pending: false};
     if (status.pending) {
@@ -42,7 +51,7 @@ function safeRefresh() {
     panel.refresh();
   } catch (error) {
     console.error("Gridlines could not read Scene data", error);
-    ui.notifications.error(`Gridlines: ${error.message}`);
+    if (game.user.isGM) ui.notifications.error(`Gridlines: ${error.message}`);
     overlay.setSceneState(null);
   }
 }
@@ -85,7 +94,6 @@ Hooks.on("getSceneControlButtons", controls => {
 });
 
 Hooks.on("canvasReady", () => {
-  if (!game.user.isGM) return;
   overlay.attach();
   panel.selection = null;
   overlay.selection = null;
@@ -94,7 +102,7 @@ Hooks.on("canvasReady", () => {
 Hooks.on("canvasPan", () => overlay.schedule());
 Hooks.on("canvasTearDown", () => { overlay.dispose(); panel.close(); lastWarning = null; });
 Hooks.on("updateScene", (scene) => {
-  if (scene.id !== canvas?.scene?.id || !game.user.isGM) return;
+  if (scene.id !== canvas?.scene?.id) return;
   // Foundry Scene updates can change native grid geometry as well as flags.
   safeRefresh();
   overlay.schedule();
@@ -102,15 +110,18 @@ Hooks.on("updateScene", (scene) => {
 Hooks.once("ready", () => {
   // Shared API is read-only in this prototype; Plus can later use the same resolver contract.
   const exposed = Object.freeze({
-    getState: (scene = canvas?.scene) => scene ? structuredClone(service.read(scene)) : null,
-    getAlignmentStatus: (scene = canvas?.scene) => scene ? service.getStatus(scene) : null,
+    getState: (scene = canvas?.scene) => scene ? (game.user?.isGM
+      ? structuredClone(service.read(scene)) : projectPlayerView(service.read(scene))) : null,
+    getAlignmentStatus: (scene = canvas?.scene) => scene && game.user?.isGM ? service.getStatus(scene) : null,
     openManager: () => { if (!game.user?.isGM) return false; panel.open(); return true; },
     formatAddress, parseAddress, parseRange, formatRange, parseMajorRange, formatMajorRange, parseDisplayedRange, formatDisplayedRange,
-    resolveAt: (point) => canvas?.ready && canvas.grid?.isSquare
-      ? overlayResolver(canvas.grid, canvas.dimensions.sceneRect, service.read(canvas.scene)?.axes).locate(point) : null
+    resolveAt: (point) => canvas?.ready && canvas.grid?.isSquare && canvas.scene &&
+      (game.user?.isGM || service.read(canvas.scene)?.playerGridVisible === true)
+      ? overlayResolver(canvas.grid, canvas.dimensions.sceneRect,
+        game.user?.isGM ? service.read(canvas.scene)?.axes : projectPlayerView(service.read(canvas.scene))?.axes).locate(point) : null
   });
   const module = game.modules.get(MODULE_ID);
   if (module) module.api = exposed;
-  if (game.user.isGM && canvas.ready) { overlay.attach(); safeRefresh(); }
+  if (canvas.ready) { overlay.attach(); safeRefresh(); }
   console.info("Gridlines prototype initialized (not live-certified for this Foundry build)");
 });

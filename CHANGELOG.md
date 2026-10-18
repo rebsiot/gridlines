@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.10 — 2026-10-18 (Experimental alpha — GM-controlled player overlays and label placement)
+
+- **Share Gridlines+ with players:** New per-Scene **Show/Hide Coordinate Grid to/from Players** control. Off by default for all existing and newly enabled Scenes. Players render only a read-only, non-interactive coordinate SVG with the saved axis spacing, colors and labels. They get no module edit/selection controls.
+- **Share shading individually:** Each layer in Shading Layers now has **Player Visible: Off/On**. New and existing layers default off; the flag is set only through explicit GM action. Grid sharing and per-shade sharing are independent, allowing selected shading without the coordinate grid and vice versa. Configuration, partial shading deletion and splitting preserve each surviving layer's visibility flag.
+- **Label placement:** **Column letters**: Top, Bottom, Both or Off; **Row numbers**: Left, Right, Both or Off. Independent color and font-size settings remain in place. Locations are based on the visible viewport and apply equally to the GM and player overlays. Existing Scenes default to top/left, with no Scene-flag migration.
+- **Privacy/visibility limitation:** The HTML/SVG overlay is **not fog-of-war/vision masked**. Explicitly shared markings may appear over unrevealed map portions. Players are not sent any unshared shading/named-range labels through the module's public rendering state, but Scene flags are not guaranteed secret from clients; do not store GM-secret names in them.
+- **Compatibility/data:** Keeps the `gridlines` technical ID and schema v1, shading/range IDs, fine-cell locations, prior Region conversion controls and all existing native-grid behavior. Optional `playerGridVisible` and `formats[].playerVisible` fields default hidden when absent. All writes require a GM and retain revision checking.
+- **Release/testing:** Local Node/mock suite validates GM opt-in and player rendering, label placement, controls and saved state; real Foundry v14 GM/player/fog two-client test still required. Back up the test world before updating. v0.1.9 package remains available for rollback; code-only rollback does not undo newly saved visibility flags.
+
 ## 0.1.9 — 2026-10-18 (Experimental alpha — shaded-area management and native Regions)
 
 - **Locate shading:** Each saved shading layer now offers Locate. The canvas pans to the layer and briefly displays a prominent yellow outline without replacing the current selection or saving any Scene data.

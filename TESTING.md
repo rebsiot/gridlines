@@ -1,3 +1,19 @@
+# AFT Gridlines+ v0.1.10 — GM/player sharing and label placement
+
+**Component:** G03 / module ID `gridlines`. **Working source:** verified GitHub commit `b35d1ff3de05897fabbff1ac1b6a25cc08942a78` (v0.1.9) and the matching local complete ZIP. **Installed Foundry v14 build:** not inspected; the latest live player experience remains unverified.
+
+**New tests:** `tests/player-visibility-v020.test.mjs` exercises legacy GM-only visibility defaults, per-shading publication independent of grid publication, public renderer filtering, player canvas non-interactivity and GM edit enforcement, label placement on both edges, live preview without writes, persistence and validation. Prior suite must stay green.
+
+**Release test commands:** `npm test`, `node --check` for JS scripts/tests, manifest validation, ZIP CRC audit, full package source-to-ZIP hash comparison, verified GitHub tree and manifest/download path. Passing mocks/ZIP packaging do **not** count as Foundry live tests.
+
+**Required GM/player smoke test on backed-up test Scene:** GM enables the Scene and publishes coordinate grid. Have a second logged-in player view the same active Scene and verify major/minor lines and top/bottom labels while panning/zooming. Confirm player cannot open the manager or select/shade; verify native token snapping remains unchanged. Hide the grid: player sees no coordinate lines. Publish one shaded layer only; player sees that layer but not a second unpublished layer or named-range outlines, including after a full browser refresh. Unshare and confirm it disappears. Test column bottom/both and row right/both, and light/dark backgrounds. **Fog warning:** verify that shared overlays are not fog-masked; do not use them for secret markers.
+
+**Rollback:** keep `gridlines` ID; backup `Data/modules/gridlines` and the world snapshot. Restore the previous v0.1.9 ZIP and reload the world. Persistent `playerGridVisible` and `formats[].playerVisible` flags are ignored by v0.1.9 but remain saved; reverting code alone does not undo the GM's visibility decisions. Restore the matching world snapshot or turn sharing off before downgrade if necessary. No automatic migrations, imports or Region creation in this release.
+
+**Documentation sync:** G03 handoff/latest release record and shared inventory 103 need status/version updates; 100 should note the new optional per-Scene player visibility fields and the non-fog-masked rendering limitation. No adjacent component's API changed. **Live Foundry evidence remains pending**.
+
+---
+
 # AFT Gridlines+ v0.1.9 — release test and safety record
 
 **Date:** 2026-10-18. **Owner:** G03. **Module:** `gridlines`; display title `AFT Gridlines+`. **Source baseline:** tested local v0.1.8 ZIP matching GitHub blob SHA `8aca834f94d8fc8c20ad0fc65c2115cff5a30568` on `rebsiot/gridlines` commit `ef797d72e867d6154eb710830ab08f9e19dd1ec2`. Actual installed module and Foundry v14 patch build are not available to this development session.

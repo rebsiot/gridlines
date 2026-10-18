@@ -69,7 +69,7 @@ export class GridlinesOverlay {
 
   attach() {
     this.dispose();
-    if (!game.user.isGM || !canvas.ready || !canvas.grid?.isSquare) return;
+    if (!canvas.ready || !canvas.grid?.isSquare) return;
     // Pixi v8 exposes Application.canvas; older Foundry builds used view.
     // Prefer a connected canvas element and give the GM a useful diagnostic.
     const candidates = [
@@ -97,14 +97,16 @@ export class GridlinesOverlay {
     // Selection listens on Foundry's actual canvas in capture phase. The SVG
     // stays pointer-transparent in selection mode, so right-drag still reaches
     // Foundry's own pan handler instead of being swallowed by our overlay.
-    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"])
-      view.addEventListener(type, this[{pointerdown:"onDown",pointermove:"onMove",pointerup:"onUp",pointercancel:"onCancel"}[type]], true);
-    this.root.addEventListener("pointerdown", this.onDown);
-    this.root.addEventListener("pointermove", this.onMove);
-    this.root.addEventListener("pointerup", this.onUp);
-    this.root.addEventListener("pointercancel", this.onCancel);
-    this.root.addEventListener("contextmenu", this.onContext);
-    document.addEventListener("keydown", this.onEscape);
+    if (game.user.isGM) {
+      for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"])
+        view.addEventListener(type, this[{pointerdown:"onDown",pointermove:"onMove",pointerup:"onUp",pointercancel:"onCancel"}[type]], true);
+      this.root.addEventListener("pointerdown", this.onDown);
+      this.root.addEventListener("pointermove", this.onMove);
+      this.root.addEventListener("pointerup", this.onUp);
+      this.root.addEventListener("pointercancel", this.onCancel);
+      this.root.addEventListener("contextmenu", this.onContext);
+      document.addEventListener("keydown", this.onEscape);
+    }
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(() => this.schedule());
       this.resizeObserver.observe(view);
@@ -151,6 +153,7 @@ export class GridlinesOverlay {
   }
   setVisible(visible) { this.localVisible = Boolean(visible); this.schedule(); }
   setSelecting(active) {
+    if (!game.user?.isGM) active = false;
     if (active && this.calibrating) this.stopCalibration();
     if (active && this.placementMode) this.stopPlacement({cancel: true});
     this.selecting = Boolean(active);
@@ -159,6 +162,7 @@ export class GridlinesOverlay {
     this.schedule();
   }
   setSelectionMode(mode) {
+    if (!game.user?.isGM) throw new Error("Only GMs can select or edit Gridlines+");
     if (!["major", "fine"].includes(mode)) throw new Error("Select major map cells or fine subcells");
     if (this.selectionMode === mode) return;
     this.selectionMode = mode;
@@ -177,6 +181,7 @@ export class GridlinesOverlay {
     this.root?.classList.toggle("gridlines-picking-a1", ["pick-a1", "pick-major-col", "pick-major-row"].includes(this.placementMode) && !this.pending);
   }
   startPlacement(mode) {
+    if (!game.user?.isGM) throw new Error("Only GMs can adjust Gridlines+");
     if (!["drag", "pick-a1", "pick-major-col", "pick-major-row"].includes(mode)) throw new Error("Unknown grid placement mode");
     if (!this.root || !this.sceneState || this.pending || !canvas.ready || !canvas.grid?.isSquare)
       throw new Error("Enable Gridlines on a square-grid Scene before adjusting its position");
@@ -205,6 +210,7 @@ export class GridlinesOverlay {
     if (active && !quiet) this.onPlacementDone();
   }
   startCalibration(cells) {
+    if (!game.user?.isGM) throw new Error("Only GMs can calibrate Gridlines+");
     if (![1, 5, 10].includes(cells)) throw new Error("Invalid calibration guide size");
     if (!this.root || !this.sceneState || this.pending || !canvas.ready || !canvas.grid?.isSquare)
       throw new Error("Enable Gridlines on a square-grid Scene before drawing a guide");
@@ -272,6 +278,7 @@ export class GridlinesOverlay {
   }
 
   onDown(event) {
+    if (!game.user?.isGM) return;
     if (this.placementMode && !this.pending && event.button === 0) {
       const point = this.scenePointFromEvent(event);
       if (!point) return;
@@ -467,24 +474,36 @@ export class GridlinesOverlay {
           const lastMajorY = Math.floor((visibleWorld.bottom - majorOrigin.y)/(sizeY * axes.majorEveryY) + 1e-9);
           const screenStepX = Math.abs(toScreen({x:origin.x + sizeX * axes.majorEveryX,y:origin.y}).x - toScreen({x:origin.x,y:origin.y}).x);
           const screenStepY = Math.abs(toScreen({x:origin.x,y:origin.y+sizeY * axes.majorEveryY}).y - toScreen({x:origin.x,y:origin.y}).y);
-          if (screenStepX > 40) {
+          if (screenStepX > 40 && axes.colLabelPosition !== "off") {
+            const sides = axes.colLabelPosition === "both" ? ["top","bottom"] : [axes.colLabelPosition];
+            const labelsY = {top:screenA.y + axes.colLabelSize + 4, bottom:screenB.y - 7};
+            // When both edges are near one another, avoid duplicated labels.
+            const selected = sides.length === 2 && labelsY.bottom - labelsY.top < axes.colLabelSize + 8 ? ["top"] : sides;
             for (let majorCol = firstMajorX; majorCol <= lastMajorX && majorCol - firstMajorX <= 80; majorCol++) {
               const atX = majorOrigin.x + majorCol * axes.majorEveryX * sizeX;
               const at = toScreen({x:atX, y:visibleWorld.y});
-              const lbl = svgElement("text", {x:at.x + 8, y:screenA.y + Math.max(15,axes.colLabelSize+3), class:"gridlines-axis-label", "text-anchor":"start",
-                ...labelStyle(axes.colLabelColor,axes.colLabelSize)});
-              lbl.textContent = axes.coordinateScope === "major" ? columnName(majorCol) : columnName(majorCol*axes.majorEveryX);
-              this.svg.append(lbl);
+              for (const side of selected) {
+                const lbl = svgElement("text", {x:at.x + 8, y:labelsY[side], class:"gridlines-axis-label", "data-edge":side,
+                  "text-anchor":"start", ...labelStyle(axes.colLabelColor,axes.colLabelSize)});
+                lbl.textContent = axes.coordinateScope === "major" ? columnName(majorCol) : columnName(majorCol*axes.majorEveryX);
+                this.svg.append(lbl);
+              }
             }
           }
-          if (screenStepY > 40) {
+          if (screenStepY > 40 && axes.rowLabelPosition !== "off") {
+            const sides = axes.rowLabelPosition === "both" ? ["left","right"] : [axes.rowLabelPosition];
+            const labelX = {left:screenA.x + 6, right:screenB.x - 6};
+            const selected = sides.length === 2 && labelX.right - labelX.left < axes.rowLabelSize*3 + 10 ? ["left"] : sides;
             for (let majorRow = firstMajorY; majorRow <= lastMajorY && majorRow - firstMajorY <= 80; majorRow++) {
               const atY = majorOrigin.y + majorRow * axes.majorEveryY * sizeY;
               const at = toScreen({x:visibleWorld.x, y:atY});
-              const lbl = svgElement("text", {x:screenA.x + 6, y:at.y + Math.max(27,axes.rowLabelSize+12), class:"gridlines-axis-label", "text-anchor":"start",
-                ...labelStyle(axes.rowLabelColor,axes.rowLabelSize)});
-              lbl.textContent = String(1 + (axes.coordinateScope === "major" ? majorRow : majorRow*axes.majorEveryY));
-              this.svg.append(lbl);
+              for (const side of selected) {
+                const lbl = svgElement("text", {x:labelX[side], y:at.y + Math.max(27,axes.rowLabelSize+12),
+                  class:"gridlines-axis-label", "data-edge":side, "text-anchor":side==="left"?"start":"end",
+                  ...labelStyle(axes.rowLabelColor,axes.rowLabelSize)});
+                lbl.textContent = String(1 + (axes.coordinateScope === "major" ? majorRow : majorRow*axes.majorEveryY));
+                this.svg.append(lbl);
+              }
             }
           }
         }
@@ -530,7 +549,7 @@ export class GridlinesOverlay {
       const b = toScreen({x: box.right, y: box.bottom});
       this.svg.append(svgElement("rect", {x: a.x, y: a.y, width: Math.max(0, b.x - a.x), height: Math.max(0, b.y - a.y), fill: format.fill, "fill-opacity": format.opacity, stroke: "none"}));
     }
-    if (this.localVisible) for (const named of state.namedRanges) {
+    if (this.localVisible && game.user?.isGM) for (const named of state.namedRanges) {
       const box = clipBounds(resolver.rangeBounds(named.range), sceneRect);
       if (!box) continue;
       const a = toScreen({x: box.x, y: box.y});
