@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.7 - 2026-10-18 (Experimental alpha — alignment and coordinate clarity)
+
+- **Native grid visibility:** GM-local Hide/Show Foundry Grid and Show/Hide Gridlines+ controls. Hiding native lines does not change snapping, grid opacity, or the Scene. Visibility is restored on manager close or canvas teardown; unsupported Foundry mesh arrangements yield an error instead of silently pretending to hide lines.
+- **Match buttons:** Match Gridlines+ to Foundry previews native square sizing and zero offsets; Save Grid Setup required. Match Foundry to Gridlines+ previews a native grid-size-only update for square, integer, zero-offset overlays. Rectangular cells and independent overlay offsets are rejected without altering Foundry or shifting the map background. Exposes Foundry Scene Configuration for manual calibration.
+- **Native change safeguard:** The reverse match requires a recoverable-backup acknowledgment and a separate native confirmation dialog before `Scene.update` changes `grid.size`. Existing alignment-review logic then blocks Gridlines location edits until the GM reviews the new native geometry. No tokens, walls, lights, tiles or other embedded documents are rewritten by this module.
+- **Major axis clarity:** Separate major interval for columns/rows, separate minor subdivision counts for each axis, independently selectable first major column and row. Show A/B/C and 1/2/3 for major map blocks; preserve legacy fine-cell mode until the GM explicitly switches. Optional first-block A–J / 1–10 fine-cell ruler is automatic when divisions omit underlying cells.
+- **Data contract:** Keep technical module ID `gridlines`, `flags.gridlines.state` schema 1, named-range IDs, formatting IDs, saved fine-cell indices, A1 anchors and older scalar major/minor fields. Existing v0.1.6 scenes read with scalar-to-both-axis fallback without forced migration. Independent major settings appear only after an explicit Save.
+- **Verification:** 45 Node automated/mock tests passed. Exact Foundry v14 live behavior, native Canvas mesh path and native grid change UI are pending GM smoke test.
+- **Upgrade and rollback:** Test world only; back up the world before changes. The v0.1.6 ZIP is retained. Downgrade alone will not restore independently saved major settings or a native Scene grid-size change; restore a matching world snapshot if necessary.
+
 ## 0.1.6 — 2026-10-18 (experimental alpha)
 
 - Added **Cell width** and **Cell height** inputs in Grid Setup. Uncheck **Link width and height (square cells)** to make rectangular overlay cells, e.g. 120 px wide by 80 px tall; recheck to synchronize dimensions. Both values preview on the map before Save.

@@ -2,8 +2,8 @@
   "id": "gridlines",
   "type": "module",
   "title": "AFT Gridlines+",
-  "description": "AFT Gridlines+ (experimental alpha): rectangular or square visual grid cells, independent width/height and X/Y offsets, drag-to-align, A1 and calibration guides, named ranges. Test-world use only.",
-  "version": "0.1.6",
+  "description": "AFT Gridlines+ experimental alpha for Foundry v14: native-grid visibility, safe grid matching, independent map major axes, first-block fine-cell ruler, drag alignment and named ranges.",
+  "version": "0.1.7",
   "authors": [
     {
       "name": "AFT (Advanced Features & Tools)"
@@ -20,7 +20,7 @@
   ],
   "url": "https://github.com/rebsiot/gridlines",
   "manifest": "https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json",
-  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.6-alpha.zip",
+  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.7-alpha.zip",
   "readme": "README.md",
   "changelog": "CHANGELOG.md",
   "bugs": "https://github.com/rebsiot/gridlines/issues"

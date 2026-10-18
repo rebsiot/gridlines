@@ -35,6 +35,7 @@ export class GridlinesOverlay {
     this.onPlacementPreview = () => {};
     this.onPlacementDone = () => {};
     this.onPickA1 = () => false;
+    this.onPickMajorAxis = () => false;
     this.localVisible = true;
     this.sceneState = null;
     this.previewAxes = null;
@@ -135,10 +136,10 @@ export class GridlinesOverlay {
     this.root?.classList.toggle("gridlines-selecting", this.selecting && !this.pending && !this.geometryPreviewPending);
     this.root?.classList.toggle("gridlines-calibrating", Boolean(this.calibrating) && !this.pending);
     this.root?.classList.toggle("gridlines-dragging", this.placementMode === "drag" && !this.pending);
-    this.root?.classList.toggle("gridlines-picking-a1", this.placementMode === "pick-a1" && !this.pending);
+    this.root?.classList.toggle("gridlines-picking-a1", ["pick-a1", "pick-major-col", "pick-major-row"].includes(this.placementMode) && !this.pending);
   }
   startPlacement(mode) {
-    if (!["drag", "pick-a1"].includes(mode)) throw new Error("Unknown grid placement mode");
+    if (!["drag", "pick-a1", "pick-major-col", "pick-major-row"].includes(mode)) throw new Error("Unknown grid placement mode");
     if (!this.root || !this.sceneState || this.pending || !canvas.ready || !canvas.grid?.isSquare)
       throw new Error("Enable Gridlines on a square-grid Scene before adjusting its position");
     if (this.calibrating) this.stopCalibration();
@@ -226,9 +227,11 @@ export class GridlinesOverlay {
       const point = this.scenePointFromEvent(event);
       if (!point) return;
       event.preventDefault(); event.stopPropagation();
-      if (this.placementMode === "pick-a1") {
+      if (["pick-a1", "pick-major-col", "pick-major-row"].includes(this.placementMode)) {
         const cell = overlayResolver(canvas.grid, canvas.dimensions.sceneRect, this.axes).locate(point);
-        if (cell && this.onPickA1(cell) === true) this.stopPlacement();
+        if (cell && (this.placementMode === "pick-a1" ? this.onPickA1(cell)
+          : this.onPickMajorAxis(this.placementMode === "pick-major-col" ? "col" : "row", cell)) === true)
+          this.stopPlacement();
         return;
       }
       this.placementStart = point;
@@ -375,8 +378,8 @@ export class GridlinesOverlay {
     // All guides are calculated from the same preview-aware origin/spacing as
     // hit-testing, formatted cell bounds, and named range navigation.
     if (axes.enabled && this.localVisible) {
-      const stepX = sizeX * axes.majorEvery / axes.minorDivisions;
-      const stepY = sizeY * axes.majorEvery / axes.minorDivisions;
+      const stepX = sizeX * axes.majorEveryX / axes.minorDivisionsX;
+      const stepY = sizeY * axes.majorEveryY / axes.minorDivisionsY;
       const xMin = Math.ceil((visibleWorld.x - majorOrigin.x) / stepX - 1e-9);
       const xMax = Math.floor((visibleWorld.right - majorOrigin.x) / stepX + 1e-9);
       const yMin = Math.ceil((visibleWorld.y - majorOrigin.y) / stepY - 1e-9);
@@ -386,12 +389,12 @@ export class GridlinesOverlay {
         for (let n = xMin; n <= xMax; n++) {
           const x = majorOrigin.x + n * stepX;
           const p = toScreen({x, y:visibleWorld.y});
-          (n % axes.minorDivisions === 0 ? major : minor).push(`M${p.x.toFixed(2)} ${screenA.y.toFixed(2)}V${screenB.y.toFixed(2)}`);
+          (n % axes.minorDivisionsX === 0 ? major : minor).push(`M${p.x.toFixed(2)} ${screenA.y.toFixed(2)}V${screenB.y.toFixed(2)}`);
         }
         for (let n = yMin; n <= yMax; n++) {
           const y = majorOrigin.y + n * stepY;
           const p = toScreen({x:visibleWorld.x, y});
-          (n % axes.minorDivisions === 0 ? major : minor).push(`M${screenA.x.toFixed(2)} ${p.y.toFixed(2)}H${screenB.x.toFixed(2)}`);
+          (n % axes.minorDivisionsY === 0 ? major : minor).push(`M${screenA.x.toFixed(2)} ${p.y.toFixed(2)}H${screenB.x.toFixed(2)}`);
         }
         if (minor.length) this.svg.append(svgElement("path", {class: "gridlines-minor-axes", d:minor.join(" "), fill:"none", stroke:axes.color,
           "stroke-width":axes.minorWidth, "stroke-opacity":axes.alpha * .55}));
@@ -401,29 +404,55 @@ export class GridlinesOverlay {
         // by default. Existing v0.1.1 Scenes keep absolute-cell labels to
         // avoid silently changing their previously established coordinates.
         if (axes.labels) {
-          const firstMajorX = Math.max(0, Math.ceil((visibleWorld.x - majorOrigin.x)/(sizeX * axes.majorEvery) - 1e-9));
-          const lastMajorX = Math.floor((visibleWorld.right - majorOrigin.x)/(sizeX * axes.majorEvery) + 1e-9);
-          const firstMajorY = Math.max(0, Math.ceil((visibleWorld.y - majorOrigin.y)/(sizeY * axes.majorEvery) - 1e-9));
-          const lastMajorY = Math.floor((visibleWorld.bottom - majorOrigin.y)/(sizeY * axes.majorEvery) + 1e-9);
-          const screenStepX = Math.abs(toScreen({x:origin.x + sizeX * axes.majorEvery,y:origin.y}).x - toScreen({x:origin.x,y:origin.y}).x);
-          const screenStepY = Math.abs(toScreen({x:origin.x,y:origin.y+sizeY * axes.majorEvery}).y - toScreen({x:origin.x,y:origin.y}).y);
+          const firstMajorX = Math.max(0, Math.ceil((visibleWorld.x - majorOrigin.x)/(sizeX * axes.majorEveryX) - 1e-9));
+          const lastMajorX = Math.floor((visibleWorld.right - majorOrigin.x)/(sizeX * axes.majorEveryX) + 1e-9);
+          const firstMajorY = Math.max(0, Math.ceil((visibleWorld.y - majorOrigin.y)/(sizeY * axes.majorEveryY) - 1e-9));
+          const lastMajorY = Math.floor((visibleWorld.bottom - majorOrigin.y)/(sizeY * axes.majorEveryY) + 1e-9);
+          const screenStepX = Math.abs(toScreen({x:origin.x + sizeX * axes.majorEveryX,y:origin.y}).x - toScreen({x:origin.x,y:origin.y}).x);
+          const screenStepY = Math.abs(toScreen({x:origin.x,y:origin.y+sizeY * axes.majorEveryY}).y - toScreen({x:origin.x,y:origin.y}).y);
           if (screenStepX > 40) {
             for (let majorCol = firstMajorX; majorCol <= lastMajorX && majorCol - firstMajorX <= 80; majorCol++) {
-              const atX = majorOrigin.x + majorCol * axes.majorEvery * sizeX;
+              const atX = majorOrigin.x + majorCol * axes.majorEveryX * sizeX;
               const at = toScreen({x:atX, y:visibleWorld.y});
               const lbl = svgElement("text", {x:at.x + 8, y:screenA.y + 15, class:"gridlines-axis-label", "text-anchor":"start"});
-              lbl.textContent = axes.coordinateScope === "major" ? columnName(majorCol) : columnName(majorCol*axes.majorEvery);
+              lbl.textContent = axes.coordinateScope === "major" ? columnName(majorCol) : columnName(majorCol*axes.majorEveryX);
               this.svg.append(lbl);
             }
           }
           if (screenStepY > 40) {
             for (let majorRow = firstMajorY; majorRow <= lastMajorY && majorRow - firstMajorY <= 80; majorRow++) {
-              const atY = majorOrigin.y + majorRow * axes.majorEvery * sizeY;
+              const atY = majorOrigin.y + majorRow * axes.majorEveryY * sizeY;
               const at = toScreen({x:visibleWorld.x, y:atY});
               const lbl = svgElement("text", {x:screenA.x + 6, y:at.y + 27, class:"gridlines-axis-label", "text-anchor":"start"});
-              lbl.textContent = String(1 + (axes.coordinateScope === "major" ? majorRow : majorRow*axes.majorEvery));
+              lbl.textContent = String(1 + (axes.coordinateScope === "major" ? majorRow : majorRow*axes.majorEveryY));
               this.svg.append(lbl);
             }
+          }
+        }
+        // Small reference ruler in the first major block only. If the display
+        // has fewer minor divisions than underlying cells, give the GM a visual
+        // way to locate fine-cell positions without printing A/K/U everywhere.
+        const drawRuler = axes.rulerMode === "on" || (axes.rulerMode === "auto" &&
+          (axes.majorEveryX !== axes.minorDivisionsX || axes.majorEveryY !== axes.minorDivisionsY));
+        if (drawRuler && axes.coordinateScope === "major") {
+          const inside = (x,y) => x >= visibleWorld.x && x <= visibleWorld.right && y >= visibleWorld.y && y <= visibleWorld.bottom;
+          const headingY = majorOrigin.y + Math.min(sizeY * .24, 14 / Math.max(.001, Math.abs(toScreen({x:origin.x,y:origin.y+1}).y-toScreen({x:origin.x,y:origin.y}).y)));
+          const headingX = majorOrigin.x + Math.min(sizeX * .15, 8);
+          const widthOnScreen = Math.abs(toScreen({x:majorOrigin.x + sizeX,y:majorOrigin.y}).x - toScreen(majorOrigin).x);
+          const heightOnScreen = Math.abs(toScreen({x:majorOrigin.x,y:majorOrigin.y+sizeY}).y - toScreen(majorOrigin).y);
+          if (widthOnScreen >= 14) for(let i=0;i<axes.majorEveryX && i<50;i++) {
+            const point={x:majorOrigin.x+(i+.5)*sizeX,y:headingY};
+            if (!inside(point.x,point.y)) continue;
+            const screen=toScreen(point);
+            const t=svgElement("text",{x:screen.x,y:screen.y,class:"gridlines-ruler-column","text-anchor":"middle"});
+            t.textContent=columnName(i);this.svg.append(t);
+          }
+          if (heightOnScreen >= 13) for(let i=0;i<axes.majorEveryY && i<50;i++) {
+            const point={x:headingX,y:majorOrigin.y+(i+.5)*sizeY};
+            if (!inside(point.x,point.y)) continue;
+            const screen=toScreen(point);
+            const t=svgElement("text",{x:screen.x,y:screen.y,class:"gridlines-ruler-row","text-anchor":"start"});
+            t.textContent=String(i+1);this.svg.append(t);
           }
         }
       }
@@ -457,7 +486,7 @@ export class GridlinesOverlay {
     if (this.placementMode || (this.previewAxes && (this.previewAxes.a1Row!==normalizeAxes(state.axes).a1Row ||
         this.previewAxes.a1Col!==normalizeAxes(state.axes).a1Col))) {
       const anchorBox = clipBounds(resolver.rangeBounds({from:{row:axes.a1Row,col:axes.a1Col},
-        to:{row:Math.min(99999,axes.a1Row+axes.majorEvery-1),col:Math.min(99999,axes.a1Col+axes.majorEvery-1)}}),sceneRect);
+        to:{row:Math.min(99999,axes.a1Row+axes.majorEveryY-1),col:Math.min(99999,axes.a1Col+axes.majorEveryX-1)}}),sceneRect);
       if (anchorBox) {
         const a=toScreen({x:anchorBox.x,y:anchorBox.y}), b=toScreen({x:anchorBox.right,y:anchorBox.bottom});
         this.svg.append(svgElement("rect", {class:"gridlines-a1-area",x:a.x,y:a.y,width:b.x-a.x,height:b.y-a.y,

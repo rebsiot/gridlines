@@ -8,6 +8,7 @@ const MAX_FORMATS = 1000;
 
 export const DEFAULT_AXES = Object.freeze({
   enabled: true, labels: true, majorEvery: 10, minorDivisions: 5,
+  majorEveryX: 10, majorEveryY: 10, minorDivisionsX: 5, minorDivisionsY: 5, rulerMode: "auto",
   // cellSize is the legacy v0.1.5 square dimension. Keep it for reading old
   // Scene flags, but prefer the independent width/height on new saves.
   cellSize: null, cellWidth: null, cellHeight: null, linkCellDimensions: true,
@@ -25,6 +26,12 @@ export function normalizeAxes(value = {}) {
   // on an old Scene it inherits the legacy dimension until the GM saves.
   normalized.cellWidth = raw.cellWidth ?? raw.cellSize ?? null;
   normalized.cellHeight = raw.cellHeight ?? raw.cellSize ?? null;
+  // Legacy Scenes keep the same column AND row spacing without a data migration.
+  normalized.majorEveryX = raw.majorEveryX ?? raw.majorEvery ?? 10;
+  normalized.majorEveryY = raw.majorEveryY ?? raw.majorEvery ?? 10;
+  normalized.minorDivisionsX = raw.minorDivisionsX ?? raw.minorDivisions ?? 5;
+  normalized.minorDivisionsY = raw.minorDivisionsY ?? raw.minorDivisions ?? 5;
+  normalized.rulerMode = raw.rulerMode ?? "auto";
   return normalized;
 }
 
@@ -35,6 +42,10 @@ export function validateAxes(value) {
   if (!["major", "cell"].includes(a.coordinateScope)) throw new Error("Invalid coordinate labeling mode");
   if (!integer(a.majorEvery, 1, 200) || !integer(a.minorDivisions, 1, 20))
     throw new Error("Major interval must be 1–200 cells, minor divisions 1–20");
+  if (!integer(a.majorEveryX, 1, 200) || !integer(a.majorEveryY, 1, 200) ||
+      !integer(a.minorDivisionsX, 1, 20) || !integer(a.minorDivisionsY, 1, 20))
+    throw new Error("Independent major/minor intervals are outside the supported range");
+  if (!["auto", "on", "off"].includes(a.rulerMode)) throw new Error("Invalid fine-cell ruler setting");
   if (!integer(a.a1Row, 0, 99999) || !integer(a.a1Col, 0, 99999))
     throw new Error("A1 anchor must be a valid nonnegative grid cell");
   if (!(a.cellSize === null || finite(a.cellSize, 10, 2000))) throw new Error("Legacy cell size must be 10–2000 pixels");

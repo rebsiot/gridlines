@@ -152,21 +152,31 @@ export function overlayResolver(grid, sceneRect, axes = {}) {
 }
 
 
-/** Major block references: A1 covers majorEvery x majorEvery fine cells.
- * Saved formatting and named ranges retain fine-cell indices. */
-export function parseMajorRange(text, majorEvery, a1 = {row:0,col:0}) {
-  if (!Number.isInteger(majorEvery) || majorEvery < 1) throw new Error("Invalid major interval");
+/** Major display coordinates are independent of underlying fine-cell indices.
+ * A1 may cover 10 columns by 10 rows, or independently selected intervals.
+ * Existing code supplying a scalar interval remains supported. */
+export function majorSteps(interval) {
+  const col = typeof interval === "number" ? interval : interval?.col ?? interval?.x;
+  const row = typeof interval === "number" ? interval : interval?.row ?? interval?.y;
+  if (![col, row].every(x => Number.isInteger(x) && x >= 1 && x <= 200))
+    throw new Error("Major row and column intervals must be 1–200 fine cells");
+  return {col, row};
+}
+
+export function parseMajorRange(text, interval, a1 = {row:0,col:0}) {
+  const {col,row} = majorSteps(interval);
   const r = parseRange(text);
-  const from = {row: a1.row + r.from.row * majorEvery, col: a1.col + r.from.col * majorEvery};
-  const to = {row: a1.row + (r.to.row + 1)*majorEvery - 1, col: a1.col + (r.to.col + 1)*majorEvery - 1};
+  const from = {row: a1.row + r.from.row * row, col: a1.col + r.from.col * col};
+  const to = {row: a1.row + (r.to.row + 1)*row - 1, col: a1.col + (r.to.col + 1)*col - 1};
   return normalizeRange(from, to);
 }
 
-export function formatMajorRange(range, majorEvery, a1 = {row:0,col:0}) {
+export function formatMajorRange(range, interval, a1 = {row:0,col:0}) {
+  const {col,row} = majorSteps(interval);
   const r = normalizeRange(range.from, range.to);
   if (r.from.row < a1.row || r.from.col < a1.col) return "Before A1";
-  return formatRange({from:{row:Math.floor((r.from.row-a1.row)/majorEvery),col:Math.floor((r.from.col-a1.col)/majorEvery)},
-    to:{row:Math.floor((r.to.row-a1.row)/majorEvery),col:Math.floor((r.to.col-a1.col)/majorEvery)}});
+  return formatRange({from:{row:Math.floor((r.from.row-a1.row)/row),col:Math.floor((r.from.col-a1.col)/col)},
+    to:{row:Math.floor((r.to.row-a1.row)/row),col:Math.floor((r.to.col-a1.col)/col)}});
 }
 
 /** Legacy individual-cell labels can also be relative to a GM-picked A1.

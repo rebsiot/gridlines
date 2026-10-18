@@ -103,3 +103,15 @@
 .gridlines-calibration-controls p { margin: 6px 0; }
 .gridlines-calibration-label { font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; fill: #fef3c7; stroke: #111827; stroke-width: 3px; paint-order: stroke fill; pointer-events: none; }
 .gridlines-a1-label { font-family: Arial, sans-serif; font-size: 15px; font-weight: 800; fill: #ffda71; stroke: #111827; stroke-width: 4px; paint-order: stroke fill; pointer-events: none; }
+
+/* The first major block has an optional fine-cell reference ruler. The
+ * letters/numbers are a guide, not a duplicate of saved coordinate IDs. */
+.gridlines-ruler-column, .gridlines-ruler-row {
+  fill: #fef3c7;
+  font: 700 10px Arial, sans-serif;
+  paint-order: stroke fill;
+  stroke: #172033;
+  stroke-width: 2.4px;
+  pointer-events: none;
+}
+.gridlines-ruler-row { font-size: 10px; }

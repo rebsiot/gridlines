@@ -1,3 +1,31 @@
+# AFT Gridlines+ v0.1.7 — test report
+
+**G03 / module `gridlines`.** Verified source baseline: `rebsiot/gridlines` `main` commit `86941a958f16c4a0cc9a340f17ff91257fb51307` (v0.1.6). The mounted complete v0.1.6 ZIP and its source tree were SHA-matched against that commit. **Actual installed world/module version is unknown.**
+
+## v0.1.7 local results — 2026-10-18
+
+- **Automated / mocked:** `npm test` passed **45 tests** (39 existing + 6 new tests). Checks include independent major column/row intervals, first-block ruler, A/B/C major labels, independently picked origins, visibility restoration after native redraw, preview-only copy, native size-only update, error handling for incompatible geometry, backup acknowledgment, and explicit second confirmation before a native Scene write.
+- **Static:** All JavaScript syntax checks and full ZIP-root integrity/package-content audit before release. No user-world data, tokens, characters, licensed map art or credentials included.
+- **Not verified live:** Foundry v14 actual Canvas `GridLayer` mesh lookup, Scene update hook timing, native grid-size changes with existing tokens/walls/tiles, UI layout, origin selection with zoom/pan, and two-client sync. The implementation is an alpha candidate, not a live certified module.
+
+## One safe live smoke test
+
+On a **backed-up test world** open a native square-grid Scene as GM. Update to 0.1.7. Under **Grid visibility**, click **Hide Foundry Grid** and verify the native fine mesh disappears **but token snapping still works**; then **Show Foundry Grid**. Use **Match Gridlines+ to Foundry**, adjust the major intervals to 10 columns / 10 rows and subdivisions to 5/5, verify letters A/B/C and rows 1/2/3 with the first-block A–J / 1–10 ruler, then **Discard Preview**. The test must leave the Scene unchanged. Only after that passes should you save overlays or test the native-grid reverse match on an empty duplicate Scene.
+
+## Safety and rollback
+
+- **Native Foundry changes** happen only after Preview → recoverable-backup acknowledgment → explicit confirmation. When committed, `grid.size` changes on the existing Scene. It can change snapping and the apparent alignment of existing map objects; Gridlines' alignment-review state must still be resolved explicitly afterward.
+- **Overlay changes** happen only after Save Grid Setup. The native-grid visual toggle is client-local and never changes flags. Neither toggle deletes native objects or changes token movement settings.
+- **Rollback:** Restore the prior module and matching world snapshot. v0.1.6 code does not interpret separately saved major-column and major-row settings correctly. A module ZIP rollback does not undo native Scene updates or saved flags.
+
+## Documentation synchronization
+
+The existing `103-CROSS-PROJECT-MODULE-INVENTORY.md` describes G03 at a historical concept stage and needs synchronization with the verified release commit and mock-tested status. No adjacent component contracts changed. In `100` note that v0.1.7 adds optional per-Scene major-X/major-Y and minor-X/minor-Y fields to the existing G03 Scene flags schema; `101` release process is unchanged. No separate handoff is created in this owner conversation.
+
+---
+
+## Prior test history
+
 # AFT Gridlines+ v0.1.6 — test report
 
 **Owner:** G03 — Gridlines, technical ID `gridlines`. **Source input:** GitHub `rebsiot/gridlines` default-branch commit `a3812f17d2e9d4885ee1d91b419e51654b7653a9` (v0.1.5), checked against the mounted v0.1.5 source and manifest. The actual installed version on the user's Foundry instance has **not** been inspected.

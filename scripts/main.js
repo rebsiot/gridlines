@@ -15,6 +15,7 @@ overlay.onCalibrationCancelled = () => panel.refresh();
 overlay.onPlacementPreview = axes => panel.applyDragPreview(axes);
 overlay.onPlacementDone = () => panel.refresh();
 overlay.onPickA1 = cell => panel.applyA1(cell);
+overlay.onPickMajorAxis = (axis,cell) => panel.applyMajorAnchor(axis,cell);
 let lastWarning = null;
 
 function safeRefresh() {
