@@ -1,7 +1,8 @@
 import {parseRange, normalizeRange, formatRange, overlayResolver, squareResolver, parseMajorRange, formatMajorRange, parseAnchoredFineRange, parseDisplayedRange, formatDisplayedRange} from "./coordinates.js";
 import {calibrateGuide, CALIBRATION_PRESETS} from "./calibration.js";
 import {geometrySnapshot, alignmentStatus, addFill, addNamedRange, normalizeAxes, validateAxes, overlayGeometryChanged,
-  previewClearShading, clearShadingInSelection, clearShadingLayer, clearAllShading} from "./model.js";
+  previewClearShading, clearShadingInSelection, clearShadingLayer, clearAllShading, updateShadingLayer} from "./model.js";
+import {planShadingRegions, createShadingRegions, existingShadeRegionIds, MAX_REGION_BATCH} from "./region-bridge.js";
 import {NativeGridDisplay, copyFoundryGrid, planNativeGridMatch} from "./native-grid.js";
 
 const uid = () => globalThis.crypto?.randomUUID?.() ?? foundry.utils.randomID();
@@ -46,6 +47,11 @@ export class GridlinesPanel {
     this.statusText = "";
     this.nativeGrid = new NativeGridDisplay();
     this.nativePreview = null;
+    this.shadingExpanded = true;
+    this.editingShadeId = null;
+    this.editingShadeDraft = null;
+    this.regionPreview = null;
+    this.regionBackupAcknowledged = false;
   }
 
   get scene() { return canvas.ready ? canvas.scene : null; }
@@ -62,6 +68,9 @@ export class GridlinesPanel {
     this.overlay.setPreviewAxes?.(null);
     this.nativeGrid.restore();
     this.nativePreview = null;
+    this.resetRegionPreview();
+    this.editingShadeId = null;
+    this.editingShadeDraft = null;
     this.root?.remove(); this.root = null;
   }
   toggle() { this.visible ? this.close() : this.open(); }
@@ -71,6 +80,76 @@ export class GridlinesPanel {
     if (this.visible) this.render();
   }
   announce(message) { ui.notifications?.info?.(message); this.statusText = message; this.refresh(); }
+  resetRegionPreview() {
+    this.regionPreview=null;
+    this.regionBackupAcknowledged=false;
+    this.overlay.setRegionPreview?.([]);
+  }
+  requireSavedGeometry() {
+    const state=this.service.read(this.scene);
+    if (!state || alignmentStatus(state,geometrySnapshot(this.scene)).pending ||
+        this.overlay.geometryPreviewPending || this.overlay.calibrating || this.overlay.placementMode ||
+        (this.axesDraft && JSON.stringify(normalizeAxes(this.axesDraft))!==JSON.stringify(normalizeAxes(state.axes))))
+      throw new Error("Resolve native alignment and save or discard Grid Setup previews before editing shading or creating Regions");
+    return state;
+  }
+  async locateShading(layer) {
+    const state=this.requireSavedGeometry();
+    if (!state.formats.some(f=>f.id===layer.id)) throw new Error("Shading layer no longer exists");
+    const resolver=overlayResolver(canvas.grid,canvas.dimensions.sceneRect,state.axes);
+    const box=resolver.rangeBounds(layer.range),rect=canvas.dimensions.sceneRect;
+    const x0=Math.max(box.x,rect.x),x1=Math.min(box.right,rect.x+rect.width);
+    const y0=Math.max(box.y,rect.y),y1=Math.min(box.bottom,rect.y+rect.height);
+    if (x1<=x0||y1<=y0) throw new Error("Shading area is outside the visible Scene");
+    this.overlay.flashRange(layer.range);
+    await canvas.animatePan({x:(x0+x1)/2,y:(y0+y1)/2,duration:350});
+    this.announce(`Located shading ${layer.label||""}`.trim());
+  }
+  configureShading(layer) {
+    this.requireSavedGeometry();
+    this.shadingExpanded=true;
+    this.editingShadeId=layer.id;
+    this.editingShadeDraft={label:layer.label??"",fill:layer.fill,opacity:Math.round(layer.opacity*100)};
+    this.refresh();
+  }
+  prepareRegionPreview(ids) {
+    const scene=this.scene,state=this.requireSavedGeometry();
+    const axes=normalizeAxes(state.axes);
+    const visibleName=range=>axes.coordinateScope==="major"
+      ? formatDisplayedRange(range,{col:axes.majorEveryX,row:axes.majorEveryY},{row:axes.a1Row,col:axes.a1Col},"numbers")
+      : `cell:${formatRange(range)}`;
+    const preview=planShadingRegions({scene,state,ids,resolver:overlayResolver(canvas.grid,canvas.dimensions.sceneRect,axes),
+      sceneRect:canvas.dimensions.sceneRect,displayName:visibleName});
+    this.regionPreview=preview;
+    this.regionBackupAcknowledged=false;
+    this.shadingExpanded=true;
+    this.overlay.setRegionPreview?.(preview.items.map(i=>i.range));
+    this.refresh();
+    return preview;
+  }
+  async confirmRegionCreation() {
+    const preview=this.regionPreview;
+    if (!preview) throw new Error("Preview the shading-to-Region conversion first");
+    if (!this.regionBackupAcknowledged) throw new Error("Confirm a recoverable Scene backup before creating Regions");
+    const scene=this.scene,state=this.requireSavedGeometry();
+    const axes=normalizeAxes(state.axes);
+    const visibleName=range=>axes.coordinateScope==="major"
+      ? formatDisplayedRange(range,{col:axes.majorEveryX,row:axes.majorEveryY},{row:axes.a1Row,col:axes.a1Col},"numbers")
+      : `cell:${formatRange(range)}`;
+    const message=`Create ${preview.items.length} native Foundry Region${preview.items.length===1?"":"s"} from shading? The new Regions will have no behaviors. Original Gridlines+ shading and all existing Regions remain unchanged.`;
+    const DialogV2=globalThis.foundry?.applications?.api?.DialogV2;
+    let accepted;
+    if (typeof DialogV2?.confirm==="function") accepted=await DialogV2.confirm({window:{title:"Create Regions from Gridlines+ shading"},content:`<p>${message}</p>`});
+    else if (typeof globalThis.window?.confirm==="function") accepted=globalThis.window.confirm(message);
+    else throw new Error("Native confirmation unavailable; no Regions created");
+    if (!accepted) return null;
+    const created=await createShadingRegions({scene,state,plan:preview,
+      resolver:overlayResolver(canvas.grid,canvas.dimensions.sceneRect,axes),sceneRect:canvas.dimensions.sceneRect,
+      displayName:visibleName});
+    this.resetRegionPreview();
+    this.announce(`Created ${created.length} Foundry Region${created.length===1?"":"s"}; shading and named ranges preserved`);
+    return created;
+  }
   async run(task) {
     try {
       const value = await task();
@@ -226,6 +305,7 @@ export class GridlinesPanel {
       this.root.setAttribute("aria-label", "AFT Gridlines+ manager");
     }
     const root = this.root;
+    const priorScroll = root.scrollTop;
     root.replaceChildren();
     const header = node("div", root, undefined, "gridlines-panel-header");
     node("strong", header, "AFT Gridlines+");
@@ -250,7 +330,10 @@ export class GridlinesPanel {
       this.overlay.stopPlacement?.({cancel:true,quiet:true});
       this.draftSceneId=scene.id;this.overlay.setPreviewAxes(null);
       this.nativeGrid.restore(); this.nativePreview=null;
+      this.editingShadeId=null;this.editingShadeDraft=null;this.resetRegionPreview();
+      this.shadingExpanded=true;
     }
+    if (this.regionPreview && this.regionPreview.revision !== state.revision) this.resetRegionPreview();
     if (pending) {
       const warning = node("div", root, undefined, "gridlines-warning");
       node("strong", warning, "Foundry grid alignment changed");
@@ -581,6 +664,7 @@ export class GridlinesPanel {
       await this.service.edit(scene, state.revision, current => {
         addFill(current, selected, color.value, Number(opacity.value) / 100, uid());
       });
+      this.shadingExpanded=true;
       this.announce(`Shaded ${visibleAddress(selected)}`);
     }), selection, {disabled: !this.selection});
 
@@ -595,6 +679,8 @@ export class GridlinesPanel {
       await this.service.edit(scene,state.revision,current=>{
         clearShadingInSelection(current,selected,uid);
       });
+      this.resetRegionPreview();
+      if (!this.service.read(scene).formats.length) this.shadingExpanded=false;
       this.announce(`Cleared shading in ${visibleAddress(selected)}; saved names remain intact`);
     }),shadeActions,{disabled:!this.selection||!state.formats.length});
     button(`Clear All Shading (${state.formats.length})`,()=>this.run(async()=>{
@@ -603,19 +689,91 @@ export class GridlinesPanel {
       if(!state.formats.length) return;
       if(!await this.confirmShadingClear(state.formats.length,"on this Scene")) return;
       await this.service.edit(scene,state.revision,current=>clearAllShading(current));
+      this.resetRegionPreview();this.shadingExpanded=false;
+      this.editingShadeId=null;this.editingShadeDraft=null;
       this.announce("All Gridlines+ shading cleared; named ranges were preserved");
     }),shadeActions,{disabled:!state.formats.length});
-    const layers = node("details",selection,undefined,"gridlines-section");
-    node("summary",layers,`Shading layers (${state.formats.length}) — remove individually`);
+    const layers = node("details",selection,undefined,"gridlines-section gridlines-shading-layers");
+    if (!state.formats.length) this.shadingExpanded=false;
+    layers.open=Boolean(state.formats.length && this.shadingExpanded);
+    layers.addEventListener("toggle",()=>{if(layers.isConnected!==false) this.shadingExpanded=Boolean(layers.open);});
+    node("summary",layers,`Shading layers (${state.formats.length}) — locate, select, configure, convert, or remove`);
+    const regionFound=existingShadeRegionIds(scene);
     for(const layer of state.formats){
-      const item=node("div",layers,undefined,"gridlines-name-row");
-      node("span",item,`${visibleAddress(layer.range)} · ${layer.fill}`);
+      const item=node("div",layers,undefined,"gridlines-shading-row");
+      const top=node("div",item,undefined,"gridlines-shading-title");
+      const chip=node("span",top," ","gridlines-color-chip");
+      chip.style.backgroundColor=layer.fill;
+      node("span",top,`${layer.label ? `${layer.label} · ` : ""}${visibleAddress(layer.range)} · ${Math.round(layer.opacity*100)}%`);
+      const controls=node("div",item,undefined,"gridlines-actions gridlines-shading-buttons");
+      button("Locate",()=>this.run(()=>this.locateShading(layer)),controls,{title:"Pan to this shading and flash its outline without changing selection"});
+      button("Select",()=>this.run(async()=>{
+        this.requireSavedGeometry();
+        this.overlay.setSelection(layer.range);
+        this.announce(`Selected shading ${visibleAddress(layer.range)}`);
+      }),controls,{title:"Select exactly this saved shading extent for follow-up actions"});
+      button("Configure",()=>this.run(async()=>this.configureShading(layer)),controls);
+      button(regionFound.has(layer.id)?"Region exists":"To Region",()=>this.run(async()=>{
+        this.prepareRegionPreview([layer.id]);
+      }),controls,{disabled:regionFound.has(layer.id),title:"Preview one native Region using exact Gridlines+ pixel boundaries"});
       button("Remove",()=>this.run(async()=>{
-        if(this.overlay.geometryPreviewPending || this.overlay.calibrating || this.overlay.placementMode)
-          throw new Error("Save or discard the grid setup preview before removing shading");
+        this.requireSavedGeometry();
         await this.service.edit(scene,state.revision,current=>clearShadingLayer(current,layer.id));
+        this.resetRegionPreview();
+        if(this.editingShadeId===layer.id){this.editingShadeId=null;this.editingShadeDraft=null;}
+        if(!this.service.read(scene).formats.length)this.shadingExpanded=false;
         this.announce(`Removed shading layer ${visibleAddress(layer.range)}; named ranges unchanged`);
-      }),item);
+      }),controls);
+      if(this.editingShadeId===layer.id && this.editingShadeDraft){
+        const editor=node("div",item,undefined,"gridlines-shade-editor");
+        const label=field("Shading label (optional)","text",editor,this.editingShadeDraft.label);
+        label.maxLength=64;
+        label.addEventListener("input",()=>{this.editingShadeDraft.label=label.value;});
+        const style=node("div",editor,undefined,"gridlines-actions");
+        const fill=field("Shading fill", "color",style,this.editingShadeDraft.fill);
+        fill.addEventListener("input",()=>{this.editingShadeDraft.fill=fill.value;});
+        const opacity=field("Shading opacity %", "number",style,this.editingShadeDraft.opacity);
+        opacity.min="0";opacity.max="100";opacity.step="1";
+        opacity.addEventListener("input",()=>{this.editingShadeDraft.opacity=Number(opacity.value);});
+        const actions=node("div",editor,undefined,"gridlines-actions");
+        button("Save Shading",()=>this.run(async()=>{
+          this.requireSavedGeometry();
+          const draft={...this.editingShadeDraft};
+          await this.service.edit(scene,state.revision,current=>updateShadingLayer(current,layer.id,{label:draft.label,fill:draft.fill,opacity:Number(draft.opacity)/100}));
+          this.resetRegionPreview();
+          this.editingShadeId=null;this.editingShadeDraft=null;
+          this.announce(`Updated shading ${visibleAddress(layer.range)}`);
+        }),actions);
+        button("Cancel Shading Edit",()=>{this.editingShadeId=null;this.editingShadeDraft=null;this.refresh();},actions);
+      }
+    }
+    if(state.formats.length){
+      const eligible=state.formats.filter(f=>!regionFound.has(f.id));
+      const tools=node("div",layers,undefined,"gridlines-actions");
+      const chunk=eligible.slice(0,MAX_REGION_BATCH);
+      const bulkLabel=eligible.length>MAX_REGION_BATCH
+        ? `Preview Next ${MAX_REGION_BATCH} Regions (${eligible.length} remaining)`
+        : `Preview All as Regions (${eligible.length})`;
+      button(bulkLabel,()=>this.run(async()=>{
+        if(!chunk.length)throw new Error("Every current shading layer already has a corresponding Region");
+        this.prepareRegionPreview(chunk.map(f=>f.id));
+      }),tools,{disabled:!chunk.length,title:"Preview up to 30 new native Regions at a time; originals remain untouched"});
+      if(this.regionPreview){
+        const preview=node("div",layers,undefined,"gridlines-region-preview-box");
+        node("strong",preview,`Region preview: ${this.regionPreview.items.length} new native Region${this.regionPreview.items.length===1?"":"s"}`);
+        node("p",preview,"Purple outlines show exact pixel-aligned Regions, independent of Foundry's grid. No Region is created until you confirm. Shading, named ranges and existing Regions are not changed.");
+        for(const proposed of this.regionPreview.items){
+          const s=proposed.shape;
+          node("small",preview,`${proposed.name}: (${s.x}, ${s.y}) · ${s.width} × ${s.height}px${proposed.clipped?" (clipped to Scene)":""}`);
+        }
+        const backupRow=node("label",preview,undefined,"gridlines-check");
+        const backup=node("input",backupRow);backup.type="checkbox";backup.checked=this.regionBackupAcknowledged;
+        backup.addEventListener("change",()=>{this.regionBackupAcknowledged=Boolean(backup.checked);});
+        node("span",backupRow,"I have a recoverable Scene backup and approve creating these native Regions");
+        const actions=node("div",preview,undefined,"gridlines-actions");
+        button(`Create ${this.regionPreview.items.length} Region${this.regionPreview.items.length===1?"":"s"}`,()=>this.run(()=>this.confirmRegionCreation()),actions);
+        button("Cancel Region Preview",()=>{this.resetRegionPreview();this.refresh();},actions);
+      }
     }
     const names = node("div", root, undefined, "gridlines-section");
     node("strong", names, "Named Ranges (visible coordinates)");
@@ -640,6 +798,7 @@ export class GridlinesPanel {
     }
     const footer = node("small", root, "Prototype: GM authoring only. All named locations are stored in Scene flags; do not enter GM secrets. No automation or player broadcast yet.", "gridlines-footer");
     if (this.statusText) { const note = node("small", root, this.statusText); note.className = "gridlines-status"; }
+    root.scrollTop=priorScroll;
     void footer;
   }
 }

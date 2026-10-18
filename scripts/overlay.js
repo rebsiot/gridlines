@@ -32,6 +32,9 @@ export class GridlinesOverlay {
     this.onSelection = onSelection;
     this.onContextMenu = onContextMenu;
     this.selection = null;
+    this.locatedRange = null;
+    this.locateTimer = null;
+    this.regionPreviewRanges = [];
     this.dragStart = null;
     this.selecting = false;
     this.selectionMode = "major"; // Major selection covers the entire displayed G14 block.
@@ -118,6 +121,10 @@ export class GridlinesOverlay {
     if (this.view) for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"])
       this.view.removeEventListener(type, this[{pointerdown:"onDown",pointermove:"onMove",pointerup:"onUp",pointercancel:"onCancel"}[type]], true);
     document.removeEventListener("keydown", this.onEscape);
+    if (this.locateTimer) clearTimeout(this.locateTimer);
+    this.locateTimer=null;
+    this.locatedRange=null;
+    this.regionPreviewRanges=[];
     this.root?.remove();
     this.root = null;
     this.svg = null;
@@ -226,6 +233,17 @@ export class GridlinesOverlay {
   setSelection(range) {
     this.selection = range;
     this.onSelection(range);
+    this.schedule();
+  }
+  flashRange(range, duration = 2800) {
+    if (this.locateTimer) clearTimeout(this.locateTimer);
+    this.locatedRange = normalizeRange(range.from,range.to);
+    this.schedule();
+    this.locateTimer = setTimeout(()=>{this.locatedRange=null;this.locateTimer=null;this.schedule();},duration);
+    this.locateTimer.unref?.();
+  }
+  setRegionPreview(ranges) {
+    this.regionPreviewRanges = (ranges ?? []).map(r=>normalizeRange(r.from,r.to));
     this.schedule();
   }
   get pending() {
@@ -395,7 +413,8 @@ export class GridlinesOverlay {
     const state = this.sceneState;
     this.syncInteraction();
     if (!state || !canvas.ready || !canvas.grid?.isSquare || viewRect.width < 1 || viewRect.height < 1) return;
-    if (!this.localVisible && !this.calibrating && !this.calibrationGuide && !this.placementMode) return;
+    if (!this.localVisible && !this.calibrating && !this.calibrationGuide && !this.placementMode &&
+        !this.locatedRange && !this.regionPreviewRanges.length) return;
     const sceneRect = canvas.dimensions.sceneRect;
     const axes = this.axes;
     const resolver = overlayResolver(canvas.grid, sceneRect, axes);
@@ -518,6 +537,19 @@ export class GridlinesOverlay {
       const b = toScreen({x: box.right, y: box.bottom});
       this.svg.append(svgElement("rect", {x: a.x, y: a.y, width: Math.max(0, b.x - a.x), height: Math.max(0, b.y - a.y), fill: "none", stroke: "#eab75e", "stroke-width": 1.5, "stroke-dasharray": "6 4", "stroke-opacity": .85}));
     }
+    // Non-destructive locate flash and Region-preview outlines, even if the
+    // regular grid overlay was temporarily hidden during alignment.
+    const outlineRange = (range, attributes) => {
+      const box = clipBounds(resolver.rangeBounds(range),sceneRect);
+      if (!box) return;
+      const a = toScreen({x:box.x,y:box.y}), b=toScreen({x:box.right,y:box.bottom});
+      this.svg.append(svgElement("rect",{x:a.x,y:a.y,width:Math.max(0,b.x-a.x),height:Math.max(0,b.y-a.y),
+        fill:"none",...attributes}));
+    };
+    for (const range of this.regionPreviewRanges) outlineRange(range,{class:"gridlines-region-preview",stroke:"#c084fc",
+      "stroke-width":3,"stroke-dasharray":"8 4"});
+    if (this.locatedRange) outlineRange(this.locatedRange,{class:"gridlines-locate-highlight",stroke:"#facc15",
+      "stroke-width":4,"stroke-dasharray":"10 5"});
     if (this.selection && this.localVisible) {
       const box = clipBounds(resolver.rangeBounds(this.selection), sceneRect);
       if (box) {

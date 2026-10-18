@@ -236,6 +236,20 @@ export function clearShadingInSelection(state, selected, makeId) {
 }
 
 /** Remove a single saved shading layer by ID; no other overlays or ranges change. */
+/** Configure one existing shading layer without replacing its ID, extent, or unrelated layers. */
+export function updateShadingLayer(state, id, {label = "", fill, opacity}) {
+  const layer = state.formats.find(f => f.id === id);
+  if (!layer) throw new Error("Shading layer no longer exists; refresh Gridlines+");
+  const name=String(label ?? "").trim();
+  if (name.length > 64 || /[\x00-\x1F]/.test(name)) throw new Error("Shading label must contain at most 64 ordinary characters");
+  if (!/^#[0-9a-f]{6}$/i.test(fill) || !Number.isFinite(opacity) || opacity < 0 || opacity > 1)
+    throw new Error("Invalid shading color or opacity");
+  layer.fill=fill;
+  layer.opacity=opacity;
+  if (name) layer.label=name;
+  else delete layer.label;
+}
+
 export function clearShadingLayer(state, id) {
   const before = state.formats.length;
   state.formats = state.formats.filter(f => f.id !== id);

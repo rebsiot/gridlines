@@ -2,7 +2,7 @@
 
 A GM-focused Foundry VTT module for aligning a configurable grid overlay to printed map coordinates, finding named locations and shading selected cells. The overlay can use rectangular cells, independently of Foundry's **square movement and snapping grid**. No Tiles, Drawings or Regions are created for grid cells.
 
-**Version 0.1.8 — 2026-10-18.** Developed for Foundry V14; live Foundry v14 installation and two-client tests **have not been verified**. Use a backed-up **test world**, not an active campaign.
+**Version 0.1.9 — 2026-10-18.** Developed for Foundry V14; live Foundry v14 installation and two-client tests **have not been verified**. Use a backed-up **test world**, not an active campaign.
 
 ## First use: align a printed A/B/C, 1/2/3 map
 
@@ -14,9 +14,22 @@ A GM-focused Foundry VTT module for aligning a configurable grid overlay to prin
 6. If the overlay shows fewer lines than the fine-cell count, **First major block: fine-cell ruler → Automatic** identifies subcells: **1–10** across the first block when major columns are labeled **A, B, C**; **A–J** across when a legacy fine-column scheme labels major boundaries **A, K, U**. Row subcells use 1–10. This ruler is a *reference*, not an additional grid.
 7. Under **Coordinate label fonts**, separately set top-column letter size/color, left-row number size/color, and subcell ruler size/color (7–48 px). Changes preview live. Label outlines automatically contrast with font color to improve readability over artwork.
 8. Under **Select on map**, choose **Major map blocks** (default on new Scenes) or **Fine subcells**. A single click inside major block `G14` selects the **whole G14 region**, not a hidden fine cell. For a single fine cell inside G14, use `G14.3,4` (third subcolumn, fourth subrow); `G14.C4` also works. **Left-drag selects and right-drag pans** the native Foundry canvas.
-9. After shading, use **Clear Shading in Selection** to clear only selected cells, **Shading layers → Remove** to remove one saved layer, or **Clear All Shading** for the entire Scene. Multiple-layer and full-Scene clearing asks for confirmation. **Named ranges remain unchanged** when shading is removed.
-10. Select **Save Grid Setup** to commit overlay settings, or **Discard Preview** to restore them. If existing ranges or shading could be affected, first make a recoverable backup and acknowledge the warning.
+9. Open **Shading layers** to identify saved fills by location, label, color and opacity. Click **Locate** to center on a fill and flash its border; **Select** to select exactly its saved area; or **Configure** to change its label, fill and opacity. The list remains expanded after actions until you collapse it or delete the last layer. **Remove** deletes one saved fill; **Clear Shading in Selection** or **Clear All Shading** work as before and preserve named ranges.
+10. To make a native Foundry Region from a fill, click **To Region**. A purple border previews the proposed Region. Review its pixel bounds, acknowledge the recoverable Scene backup, and click **Create Region** followed by confirmation. You can **Preview All as Regions** in batches of up to 30 to create several. Existing Regions and Gridlines+ shading remain untouched.
+11. Select **Save Grid Setup** to commit overlay settings, or **Discard Preview** to restore them. If existing ranges or shading could be affected, first make a recoverable backup and acknowledge the warning.
 
+
+### Optional native Region conversion — even when grids do not align
+
+Gridlines+ and Foundry's movement grid are independent. **A shaded rectangle can become a native Foundry Region even when Gridlines+ uses different cell dimensions or X/Y offset**. Conversion reads the shaded range's saved cell bounds through Gridlines+' overlay resolver and translates them to an axis-aligned native **rectangle shape in Scene pixel coordinates**. There is **no snapping to the Foundry movement grid**. Partial areas at the edge of the Scene are clipped rather than expanded onto the native grid. The stored rectangle coordinates are rounded to 0.001 pixel to avoid arithmetic noise.
+
+- **Per-layer Locate, Select, Configure, To Region, Remove** are found under the persistent **Shading layers** accordion. Optional shading labels help distinguish overlapping fills. Select does not change saved shading until you explicitly perform an edit.
+- **Region preview is non-destructive.** A purple outline appears on the Scene. It requires a backup acknowledgment and a separate GM confirmation before a native Region is created. **Cancel Region Preview** creates nothing. Batch conversion uses no more than 30 shading layers at once; remaining ones can be previewed after the first batch.
+- One Region is created per selected shading layer (including independently saved fragments), with one native rectangle shape each, color taken from the saved fill and **no Region behaviors or restrictions**. It does **not** combine overlapping layers into a single polygon or reproduce the exact Gridlines+ fill opacity. A native Region may appear differently from a shaded overlay; configure its visibility and behaviors separately in the native Region interface.
+- Existing Region documents are never overwritten or deleted. Original shading and named ranges are not removed. Created Regions have `flags.gridlines.sourceKind`, `sourceSceneId`, and `shadeLayerId` metadata; an existing generated Region for that same shading layer prevents accidental duplication. Creating a Region is an explicit persistent Scene change that is **not undone by uninstalling the module**. Delete only that Region in Foundry if necessary, or restore the Scene backup.
+- **No automatic synchronization** is established. If you move Gridlines+' origin, resize its cells, edit a shading layer, or delete the source shading later, any Region already created stays at its original location. Review and adjust Regions manually if alignment changes.
+
+**Foundry API tested:** v14 Region shapes accept rectangular pixel geometry and Scene embedded Region documents. Code and 67 Node mock tests cover the create/confirm lifecycle and mismatched grids; the actual v14 canvas rendering, permissions and native Region creation still need an in-world GM test before relying on this feature in a live campaign.
 
 ### Match native Foundry and Gridlines+ geometry
 
@@ -51,14 +64,14 @@ You can select multiple major blocks or multiple subcells; an entire major block
 - Manifest: `https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json`
 - Manual installation: extract the full ZIP so `Data/modules/gridlines/module.json` is at the root. Stop the Foundry server before replacing module files manually. Restart, enable it in the world, and refresh the browser.
 - Technical module ID remains **`gridlines`**. Repository remains [rebsiot/gridlines](https://github.com/rebsiot/gridlines). Scene data remains `flags.gridlines.state` with schema version 1.
-- This build is GM-only. Players cannot access the Gridlines+ overlay or location manager. **Scene flags are not secret:** do not place sensitive GM-only information in named ranges.
+- This build is GM-only. Players cannot access the Gridlines+ overlay or location manager. Native Regions created through the separate optional conversion follow Foundry's own Region permissions and visibility. **Scene flags are not secret:** do not place sensitive GM-only information in named ranges.
 - No claimed live Foundry compatibility beyond the v14 development target. Hex and gridless modes, player visibility, fog-aware compositing, undo/redo, conditional formatting, and automation remain outside this prototype.
 
 ## Backup and rollback
 
-Before updating, save a **recoverable backup of the test world** (including Scene flags) and, for manual installs, the previous `Data/modules/gridlines` folder. Versions 0.1.7 and earlier are retained on GitHub for code rollback.
+Before updating, save a **recoverable backup of the test world** (including Scene flags) and, for manual installs, the previous `Data/modules/gridlines` folder. Version 0.1.8 and earlier ZIPs are retained on GitHub for code rollback.
 
-To roll back, disable the module, stop the server if manually replacing files, restore the previous ZIP/module directory, restart and refresh. **Restoring code alone does not reverse Scene edits.** If you clear shading in 0.1.8, reverting only the module will **not restore deleted shading**. Recover that Scene from its world backup. Older code will ignore the new label font preferences and may show coordinates differently; code rollback alone does not undo saved geometry or coordinate settings. Native Foundry grid-size changes likewise require restoring the world snapshot, not just module code.
+To roll back, disable the module, stop the server if manually replacing files, restore the previous ZIP/module directory, restart and refresh. **Restoring code alone does not reverse Scene edits.** If you clear shading, reverting only the module will **not restore deleted shading**. Likewise, new Foundry Regions created with 0.1.9 remain until explicitly deleted in Foundry or recovered from a world snapshot. Recover that Scene from its world backup. Older code will ignore the new label font preferences and may show coordinates differently; code rollback alone does not undo saved geometry or coordinate settings. Native Foundry grid-size changes likewise require restoring the world snapshot, not just module code.
 
 ## Tests, support and status
 

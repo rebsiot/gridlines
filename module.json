@@ -2,8 +2,8 @@
   "id": "gridlines",
   "type": "module",
   "title": "AFT Gridlines+",
-  "description": "AFT Gridlines+ experimental Foundry v14 alpha: visible major-block and relative fine-cell coordinates, shading removal, readable adjustable coordinate fonts, native-grid and overlay alignment.",
-  "version": "0.1.8",
+  "description": "AFT Gridlines+ experimental Foundry v14 alpha: align rectangular grids, locate and configure shading, and optionally create native Regions with preview and confirmation.",
+  "version": "0.1.9",
   "authors": [
     {
       "name": "AFT (Advanced Features & Tools)"
@@ -20,7 +20,7 @@
   ],
   "url": "https://github.com/rebsiot/gridlines",
   "manifest": "https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json",
-  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.8-alpha.zip",
+  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.9-alpha.zip",
   "readme": "README.md",
   "changelog": "CHANGELOG.md",
   "bugs": "https://github.com/rebsiot/gridlines/issues"

@@ -1,3 +1,35 @@
+# AFT Gridlines+ v0.1.9 — release test and safety record
+
+**Date:** 2026-10-18. **Owner:** G03. **Module:** `gridlines`; display title `AFT Gridlines+`. **Source baseline:** tested local v0.1.8 ZIP matching GitHub blob SHA `8aca834f94d8fc8c20ad0fc65c2115cff5a30568` on `rebsiot/gridlines` commit `ef797d72e867d6154eb710830ab08f9e19dd1ec2`. Actual installed module and Foundry v14 patch build are not available to this development session.
+
+## Implemented scope and automated/mock evidence
+
+- Added Locate with animated camera pan and transient yellow SVG rectangle (no Scene writes). Select chooses the exact saved fine-cell rectangle, without permanently changing shading. Configure edits optional layer label/fill/opacity through revision-checked Scene flag updates and retains all IDs, bounds, and named ranges.
+- Shading Layers `details` section holds client-local expanded/collapsed state through `render` rebuilds, preserving scroll position. A GM can close it manually; the section closes automatically only when no layers remain. No new persistent panel-layout flag is introduced.
+- Region conversion is opt-in, non-destructive, per-layer or in batches of at most 30. Preview builds pixel-accurate, scene-clipped native rectangle data independently of Foundry's square snapping grid. The GM sees purple outlines, a bounding-box summary, backup acknowledgment and a separate confirmation dialog. Creation calls native `scene.createEmbeddedDocuments("Region", data)`; these are genuine new Regions, not faux-grid per-cell objects.
+- New native Regions contain one rectangle, no behaviors, saved fill color, and `flags.gridlines` provenance. The original fill data remains; other Regions and named ranges remain untouched. Duplicate conversion is blocked when a previously generated Region still exists. Preview rejects stale Gridlines+ revisions or geometry, out-of-scene shapes and duplicate IDs.
+- `npm test` automated/mock suite: **67 passed**, zero failed. This includes the original 56 v0.1.8 tests plus 11 new Region-management, metadata, exact geometry, duplicate protection, revision guard, accordion, editing, pan/flash, preview/batch/cancel and persisted-creation tests. `node --check` was run on scripts and tests. The full ZIP was integrity-checked with `module.json` at root and source-byte equality checked against the test directory.
+
+**Live Foundry v14:** NOT RUN. Region rectangle validation/rendering, live permission enforcement, menu interactions, panning, Region legend appearance and multi-client behavior still require user confirmation. The Node DOM mocks do not validate native canvas placement.
+
+## First live smoke test
+
+1. Back up a test world/Scene and the installed Gridlines+ module. Update using the unchanged manifest, confirm **v0.1.9** in Add-on Modules, enable in world, hard-refresh.
+2. Open the manager on a square-grid Scene with two saved shaded rectangles. Expand **Shading layers**, click **Locate** on the first: a yellow outline should flash and the camera center on that fill. **Select** should outline exactly its saved rectangle; **Configure** should allow a label and color/opacity change, and Cancel should leave it unchanged. Shading Layers should stay expanded after each action.
+3. Click **To Region** for a layer. Check the purple outline and pixel bounds. **Cancel Region Preview**; confirm there is no new native Region. Repeat, acknowledge the backup and confirm **Create 1 Region**. Inspect Foundry's Region legend: one genuine Region should appear in the same place, with no behaviors. Original shading should still be present. A duplicate **To Region** should be blocked.
+4. For a deliberately unaligned rectangular Gridlines+ overlay (for example 120×80px with nonzero X/Y offsets), create a second Region and compare its corners to the purple preview rather than snapping to native 100px grid edges. Inspect with native Region tool.
+5. Remove one remaining shaded layer and verify Shading Layers stays expanded. Remove the last layer and verify it closes. Confirm previously created native Regions persist after removing source shading, and existing named ranges remain unchanged. Do this in a disposable test Scene; deleting new Region data is not handled by rolling back the module ZIP.
+
+## Install and rollback
+
+No external modules required. Native Foundry v14 is targeted; hex/gridless unsupported. Back up world Scene data before edits. Upgrading the code leaves the module ID and old `flags.gridlines.state` schema 1 unchanged. A newly configured optional fill label is harmless to older versions, but v0.1.8 will not display that label or provide Region conversion. Restore v0.1.8 ZIP to roll back code; to undo saved shading edits or created Region documents, delete only the specific created Regions using Foundry's native controls or restore the matched world snapshot. No automatic deletion or mass change is performed.
+
+## Shared-document sync
+
+G03 release record should record the new `flags.gridlines` Region provenance contract, without changing the original `flags.gridlines.state` schema. `100-GLOBAL-ARCHITECTURE-DATA-CONTRACTS.md` may note the optional Region provenance fields if future modules consume them; `103-CROSS-PROJECT-MODULE-INVENTORY.md` must be updated from its historical G03 concept-stage entry with exact release and mock-only status. `101` and adjacent component owners do not require code changes.
+
+---
+
 # AFT Gridlines+ v0.1.8 — Test and deployment record
 
 **Owner:** G03 · module ID `gridlines`. **Verified source baseline:** GitHub `rebsiot/gridlines` `main` at `4d278c9475b6d288b18f836c103f4afa1f4e08c7` (v0.1.7); matched the complete local v0.1.7 alpha ZIP by Git blob SHA `ccb3c2a8cfd35df9c8a835ba7cd1d182d78eca2d`. **User-installed version:** not independently audited. **Intended Foundry:** v14, live browser/GM test pending.

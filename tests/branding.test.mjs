@@ -8,10 +8,10 @@ test('AFT Gridlines+ is the Foundry package title but stable module ID and URLs 
   const pkg=JSON.parse(text('package.json'));
   assert.equal(manifest.title, 'AFT Gridlines+');
   assert.equal(manifest.id, 'gridlines');
-  assert.equal(manifest.version, '0.1.8');
-  assert.equal(pkg.version, '0.1.8');
+  assert.equal(manifest.version, '0.1.9');
+  assert.equal(pkg.version, '0.1.9');
   assert.equal(manifest.manifest, 'https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json');
-  assert.equal(manifest.download, 'https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.8-alpha.zip');
+  assert.equal(manifest.download, 'https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.9-alpha.zip');
   assert.deepEqual(manifest.esmodules, ['scripts/main.js']);
   assert.deepEqual(manifest.styles, ['styles/gridlines.css']);
 });

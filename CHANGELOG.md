@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.9 — 2026-10-18 (Experimental alpha — shaded-area management and native Regions)
+
+- **Locate shading:** Each saved shading layer now offers Locate. The canvas pans to the layer and briefly displays a prominent yellow outline without replacing the current selection or saving any Scene data.
+- **Select exact shading:** Each shading layer has Select, which selects its complete saved fine-cell rectangle (even if it is only part of a major map block). This supports immediate Clear Shading in Selection and other existing actions.
+- **Configure shading:** Each layer can receive an optional descriptive label (up to 64 characters), a revised fill color and opacity. Save/Cancel acts on that one existing layer without rewriting its ID, bounds or any named range. Older Scene flags without a label still load unchanged under schema version 1.
+- **Shading Layers accordion:** Expanded/collapsed state survives Locate, Select, Configure, Remove, selection updates and all normal manager refreshes. It stays expanded until the GM explicitly closes it, or until the last shading layer is removed. Panel scroll position is preserved when rebuilding the UI.
+- **Native Foundry Regions (opt-in):** Preview a single shaded rectangle with **To Region**, or preview the next batch of up to 30 unconvertered shading layers. Purple outlines show the exact Scene-pixel rectangles. A recoverable-backup acknowledgment and a separate confirmation are required before any `Scene.createEmbeddedDocuments("Region", ...)` call.
+- **Native geometry:** New Regions are created with native rectangle shapes in Scene pixel coordinates, independently of native Foundry square-grid snapping. The rectangles follow Gridlines+ width/height and X/Y offset (and are clipped to the Scene). They are rounded only to 0.001 pixel to eliminate numeric noise. No grid-based approximation is applied and no Region behaviors are attached. Native Regions may render differently from the Gridlines+ shading overlay.
+- **No implicit conversion/removal:** Original shading, named ranges, existing Regions, Tokens, Walls, Tiles, Drawings and native grid are unchanged. Created Regions include private provenance flags linking back to their original shading ID; duplicate creation from the same shading layer is blocked while that Region still exists. Later shade color/geometry changes do not automatically update an already-created Region.
+- **Rollback:** The previous v0.1.8 ZIP is retained for code rollback. Disabling/downgrading Gridlines+ will **not** delete newly created native Regions or undo saved shading edits. Use the native Region tool to remove particular created Regions, or restore the matching recoverable world snapshot; never delete all Regions to undo one conversion.
+- **Evidence:** 67 local automated/mock tests passed; root-level release ZIP and source integrity audited; published GitHub source/download verified separately. **No live Foundry v14 Region creation test or two-client test has been completed.**
+
+
 ## 0.1.8 — 2026-10-18 (Experimental alpha — visible coordinates and formatting controls)
 
 - **Named ranges follow visible map cells:** By default, selecting a major map block (e.g., `G14`) selects all underlying fine cells in that displayed block. Fine Subcells mode selects individual finer positions using relative subaddresses such as `G14.3,4` (numeric X,Y) or `G14.C4` (alphabetic alias). Go To and named-range listings use visible coordinates; `cell:` retains explicit legacy absolute fine indices. No old named ranges or IDs are automatically remapped.
