@@ -5,7 +5,9 @@
   pointer-events: none;
   touch-action: none;
 }
-.gridlines-canvas-overlay.gridlines-selecting,
+/* Selection captures ONLY left-pointer events on Foundry's canvas.
+ * The SVG must not block native right-drag panning. */
+.gridlines-canvas-overlay.gridlines-selecting { pointer-events: none; }
 .gridlines-canvas-overlay.gridlines-calibrating,
 .gridlines-canvas-overlay.gridlines-picking-a1 { pointer-events: auto; cursor: crosshair; }
 .gridlines-canvas-overlay.gridlines-dragging { pointer-events: auto; cursor: grab; }
@@ -13,11 +15,8 @@
 .gridlines-canvas-overlay svg { display: block; width: 100%; height: 100%; pointer-events: none; }
 .gridlines-axis-label {
   font-family: Arial, sans-serif;
-  font-size: 11px;
   font-weight: 700;
-  fill: white;
   paint-order: stroke fill;
-  stroke: #111827;
   stroke-width: 3px;
   stroke-linejoin: round;
   pointer-events: none;
@@ -104,14 +103,13 @@
 .gridlines-calibration-label { font-family: Arial, sans-serif; font-size: 12px; font-weight: 700; fill: #fef3c7; stroke: #111827; stroke-width: 3px; paint-order: stroke fill; pointer-events: none; }
 .gridlines-a1-label { font-family: Arial, sans-serif; font-size: 15px; font-weight: 800; fill: #ffda71; stroke: #111827; stroke-width: 4px; paint-order: stroke fill; pointer-events: none; }
 
-/* The first major block has an optional fine-cell reference ruler. The
- * letters/numbers are a guide, not a duplicate of saved coordinate IDs. */
+/* Numeric subcolumns when major A/B/C labels are used;
+ * alphabetic fine columns for legacy A/K/U addressing. */
 .gridlines-ruler-column, .gridlines-ruler-row {
-  fill: #fef3c7;
-  font: 700 10px Arial, sans-serif;
+  font-family: Arial, sans-serif;
+  font-weight: 700;
   paint-order: stroke fill;
-  stroke: #172033;
   stroke-width: 2.4px;
   pointer-events: none;
 }
-.gridlines-ruler-row { font-size: 10px; }
+/* SVG properties (font-size, fill, outline) are now controlled by Grid Setup. */

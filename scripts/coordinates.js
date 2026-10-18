@@ -186,3 +186,75 @@ export function parseAnchoredFineRange(text, a1 = {row:0,col:0}) {
   return normalizeRange({row:a1.row+r.from.row,col:a1.col+r.from.col},
     {row:a1.row+r.to.row,col:a1.col+r.to.col});
 }
+
+/** A displayed major address is the whole major rectangle, never one hidden fine cell. */
+export function majorBlockAt(cell, interval, a1 = {row: 0, col: 0}) {
+  const steps = majorSteps(interval);
+  if (cell.row < a1.row || cell.col < a1.col) return null;
+  const majorRow = Math.floor((cell.row - a1.row) / steps.row);
+  const majorCol = Math.floor((cell.col - a1.col) / steps.col);
+  return normalizeRange(
+    {row: a1.row + majorRow * steps.row, col: a1.col + majorCol * steps.col},
+    {row: a1.row + (majorRow + 1) * steps.row - 1, col: a1.col + (majorCol + 1) * steps.col - 1}
+  );
+}
+
+/** Selection mode is client-local; only normalized fine indices reach Scene flags. */
+export function selectionRange(first, last, interval, a1 = {row: 0, col: 0}, mode = "major") {
+  const fine = normalizeRange(first, last);
+  if (mode === "fine") return fine;
+  if (mode !== "major") throw new Error("Unknown Gridlines selection mode");
+  const start = majorBlockAt(fine.from, interval, a1);
+  const end = majorBlockAt(fine.to, interval, a1);
+  return start && end ? normalizeRange(start.from, end.to) : null;
+}
+
+/**
+ * Major G14 = one whole visible block.
+ * G14.C4 = the third fine column, fourth fine row INSIDE G14.
+ * G14.3,4 is an equivalent numeric sub-address (X,Y).
+ * A bare G14.4 is not accepted: a 2D cell requires both offsets.
+ * `cell:G14` is handled by the UI as an explicit original raw fine index.
+ */
+export function parseDisplayedRange(value, interval, a1 = {row: 0, col: 0}) {
+  const steps = majorSteps(interval);
+  const parts = String(value ?? "").trim().split(":");
+  if (parts.length < 1 || parts.length > 2) throw new Error("Use G14, G14.C4 or G14.C4:G14.E6");
+  const parsePart = (part, endpoint) => {
+    const match = /^\s*([a-z]+)([1-9]\d*)(?:\.([a-z]+)([1-9]\d*)|\.([1-9]\d*),([1-9]\d*))?\s*$/i.exec(part);
+    if (!match) throw new Error("Use a major cell G14 or a subcell G14.C4 (column C, row 4)");
+    const major = parseAddress(`${match[1]}${match[2]}`);
+    const row = a1.row + major.row * steps.row;
+    const col = a1.col + major.col * steps.col;
+    const hasSub = match[3] !== undefined || match[5] !== undefined;
+    if (!hasSub) return {row: row + (endpoint === "to" ? steps.row - 1 : 0),
+      col: col + (endpoint === "to" ? steps.col - 1 : 0)};
+    const subCol = match[3] ? columnIndex(match[3]) + 1 : Number(match[5]);
+    const subRow = Number(match[4] ?? match[6]);
+    if (!Number.isSafeInteger(subCol) || !Number.isSafeInteger(subRow) ||
+        subCol < 1 || subCol > steps.col || subRow < 1 || subRow > steps.row)
+      throw new Error(`Subcell is outside its ${steps.col} by ${steps.row} major block`);
+    return {row: row + subRow - 1, col: col + subCol - 1};
+  };
+  return normalizeRange(parsePart(parts[0], "from"), parsePart(parts[1] ?? parts[0], "to"));
+}
+
+/** Only label exact major-cell coverage as G14; partial coverage gets a fine suffix. */
+export function formatDisplayedRange(range, interval, a1 = {row: 0, col: 0}, subColumns = "letters") {
+  if (!["letters", "numbers"].includes(subColumns)) throw new Error("Unknown subcell column labeling style");
+  const steps = majorSteps(interval);
+  const r = normalizeRange(range.from, range.to);
+  if (r.from.row < a1.row || r.from.col < a1.col) return `cell:${formatRange(r)}`;
+  const firstMajor = majorBlockAt(r.from, steps, a1);
+  const lastMajor = majorBlockAt(r.to, steps, a1);
+  const whollyMajor = r.from.row === firstMajor.from.row && r.from.col === firstMajor.from.col &&
+    r.to.row === lastMajor.to.row && r.to.col === lastMajor.to.col;
+  if (whollyMajor) return formatMajorRange(r, steps, a1);
+  const suffix = cell => {
+    const mc = Math.floor((cell.col - a1.col) / steps.col), mr = Math.floor((cell.row - a1.row) / steps.row);
+    const sc = (cell.col - a1.col) % steps.col, sr = (cell.row - a1.row) % steps.row;
+    return `${columnName(mc)}${mr + 1}.${subColumns === "numbers" ? `${sc+1},${sr+1}` : `${columnName(sc)}${sr + 1}`}`;
+  };
+  return r.from.row === r.to.row && r.from.col === r.to.col
+    ? suffix(r.from) : `${suffix(r.from)}:${suffix(r.to)}`;
+}

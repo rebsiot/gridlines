@@ -14,7 +14,9 @@ export const DEFAULT_AXES = Object.freeze({
   cellSize: null, cellWidth: null, cellHeight: null, linkCellDimensions: true,
   offsetX: 0, offsetY: 0,
   a1Row: 0, a1Col: 0,
-  color: "#65baff", alpha: .65, majorWidth: 2, minorWidth: 1, coordinateScope: "major"
+  color: "#65baff", alpha: .65, majorWidth: 2, minorWidth: 1, coordinateScope: "major",
+  colLabelSize: 11, rowLabelSize: 11, subLabelSize: 10,
+  colLabelColor: "#ffffff", rowLabelColor: "#ffffff", subLabelColor: "#fef3c7"
 });
 
 /** Optional axis fields maintain v0.1.1 Scene flags without a migration. */
@@ -59,6 +61,10 @@ export function validateAxes(value) {
   if (!/^#[0-9a-f]{6}$/i.test(a.color)) throw new Error("Invalid gridline color");
   if (!finite(a.alpha, 0, 1) || !finite(a.majorWidth, .25, 20) || !finite(a.minorWidth, .25, 20))
     throw new Error("Invalid gridline opacity or line width");
+  if (![a.colLabelSize,a.rowLabelSize,a.subLabelSize].every(n => integer(n, 7, 48)))
+    throw new Error("Column, row and subcell label sizes must be 7–48px");
+  if (![a.colLabelColor,a.rowLabelColor,a.subLabelColor].every(c => /^#[0-9a-f]{6}$/i.test(c)))
+    throw new Error("Invalid coordinate font color");
   return a;
 }
 
@@ -179,4 +185,65 @@ export function addFill(state, range, color, opacity, id) {
   if (state.formats.length >= MAX_FORMATS) throw new Error("This Scene has reached the formatting limit");
   if (!/^#[0-9A-Fa-f]{6}$/.test(color) || !Number.isFinite(opacity) || opacity < 0 || opacity > 1) throw new Error("Invalid fill style");
   state.formats.push({id, range: normalizeRange(range.from, range.to), fill: color, opacity});
+}
+
+/** Split a rectangle around a removed intersection; no grid documents are created. */
+export function subtractRange(source, cut) {
+  const a = normalizeRange(source.from, source.to);
+  const b = normalizeRange(cut.from, cut.to);
+  const top = Math.max(a.from.row, b.from.row), bottom = Math.min(a.to.row, b.to.row);
+  const left = Math.max(a.from.col, b.from.col), right = Math.min(a.to.col, b.to.col);
+  if (top > bottom || left > right) return [a];
+  const pieces = [];
+  const add = (r0, c0, r1, c1) => {
+    if (r0 <= r1 && c0 <= c1) pieces.push(normalizeRange({row:r0,col:c0},{row:r1,col:c1}));
+  };
+  add(a.from.row, a.from.col, top - 1, a.to.col);
+  add(bottom + 1, a.from.col, a.to.row, a.to.col);
+  add(top, a.from.col, bottom, left - 1);
+  add(top, right + 1, bottom, a.to.col);
+  return pieces;
+}
+
+export function previewClearShading(state, selected) {
+  validateState(state);
+  let affected = 0, resulting = 0;
+  for (const item of state.formats) {
+    const remaining = subtractRange(item.range, selected);
+    if (remaining.length !== 1 || JSON.stringify(remaining[0]) !== JSON.stringify(normalizeRange(item.range.from,item.range.to))) affected++;
+    resulting += remaining.length;
+  }
+  return {affected, previous: state.formats.length, resulting};
+}
+
+/** Remove shading only inside selected cells, preserving adjacent fragments and named ranges. */
+export function clearShadingInSelection(state, selected, makeId) {
+  const preview = previewClearShading(state, selected);
+  if (preview.resulting > MAX_FORMATS) throw new Error("Clearing this selection would exceed the shading-layer limit; remove individual layers first");
+  const remaining = [];
+  const seen = new Set(state.formats.map(f => f.id));
+  for (const format of state.formats) {
+    const fragments = subtractRange(format.range, selected);
+    fragments.forEach((range, i) => {
+      const id = i === 0 ? format.id : makeId();
+      if (seen.has(id) && id !== format.id) throw new Error("Generated shading fragment ID already exists");
+      seen.add(id);
+      remaining.push({...format, id, range});
+    });
+  }
+  state.formats = remaining;
+  return preview;
+}
+
+/** Remove a single saved shading layer by ID; no other overlays or ranges change. */
+export function clearShadingLayer(state, id) {
+  const before = state.formats.length;
+  state.formats = state.formats.filter(f => f.id !== id);
+  if (state.formats.length === before) throw new Error("Shading layer no longer exists; refresh Gridlines+");
+}
+
+export function clearAllShading(state) {
+  const count = state.formats.length;
+  state.formats = [];
+  return count;
 }

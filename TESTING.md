@@ -1,3 +1,21 @@
+# AFT Gridlines+ v0.1.8 — Test and deployment record
+
+**Owner:** G03 · module ID `gridlines`. **Verified source baseline:** GitHub `rebsiot/gridlines` `main` at `4d278c9475b6d288b18f836c103f4afa1f4e08c7` (v0.1.7); matched the complete local v0.1.7 alpha ZIP by Git blob SHA `ccb3c2a8cfd35df9c8a835ba7cd1d182d78eca2d`. **User-installed version:** not independently audited. **Intended Foundry:** v14, live browser/GM test pending.
+
+**Scope:** Major-cell and relative fine-cell selection/navigation/named-range labels; right-button native pan coexistence; clear shading by selection, saved layer, or all; adjustable row/column/subcell label size and color. No Scene data migration; previously stored fine indices and named-range IDs preserved.
+
+**Local verification:** `npm test`: 56 passed, 0 failed; static JS syntax checks; full-package ZIP audit including manifest at root and no forbidden files. Unit tests verify G14 represents a whole block, relative 2D suffixes, independent major X/Y intervals and picked A1, exact legacy cell reference, label colors and sizes, SVG redraw without Scene writes, right-button passthrough, shading rectangular subtraction and ID preservation, GM confirmation on bulk shading removal, and named-range preservation. **Automated/mock-tested, not Foundry live-confirmed.**
+
+**GM live smoke test (not run):** Back up a test world. Load v0.1.8, ensure GM-only panel opens, Select on map → Major map blocks, click one G14 square and verify the entire square is outlined and labeled G14; switch to Fine Subcells and select G14.3,4; verify Go To matching positions, right-drag still pans, change column font size/color and row font size/color then Discard Preview. Shade two overlapping ranges, remove one layer, remove selected shading, and preview Clear All but cancel. Finally reload to confirm persistence. Test multiple clients separately.
+
+**Safety:** Changing font preview does not write Scene flags. Persistent overlay setup and explicit shading actions use the existing Scene-flag revision path; native grid settings are unchanged. Clearing shading is not undone by reinstalling an older module: restore world snapshot for rollback. There is no automatic actor/token/tile/drawing/region update.
+
+**Publication and deployment:** The installable ZIP and GitHub publication must each be verified independently after build. A package uploaded to GitHub is **not** proof of a successful live Foundry installation. No public official Foundry listing is claimed.
+
+**Documentation synchronization needed:** `103-CROSS-PROJECT-MODULE-INVENTORY.md` still lists G03 as an old concept, update after reviewing the verified commit/test state. `100` can record that G03 Scene `axes` now supports optional label size/color preferences without a schema bump; `101` process unchanged. No adjacent module source modified.
+
+---
+
 # AFT Gridlines+ v0.1.7 — test report
 
 **G03 / module `gridlines`.** Verified source baseline: `rebsiot/gridlines` `main` commit `86941a958f16c4a0cc9a340f17ff91257fb51307` (v0.1.6). The mounted complete v0.1.6 ZIP and its source tree were SHA-matched against that commit. **Actual installed world/module version is unknown.**

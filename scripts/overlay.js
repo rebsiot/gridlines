@@ -1,8 +1,19 @@
-import {overlayResolver, normalizeRange, columnName} from "./coordinates.js";
+import {overlayResolver, normalizeRange, columnName, selectionRange} from "./coordinates.js";
 import {alignmentStatus, normalizeAxes, overlayGeometryChanged} from "./model.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const LIMIT_AXIS_LINES = 250;
+
+// Auto-contrasting outlines make custom font colors legible over mixed artwork.
+export function labelOutlineColor(hex) {
+  const rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255);
+  const light=rgb.map(x=>x<=.04045 ? x/12.92 : ((x+.055)/1.055)**2.4);
+  return light[0]*.2126+light[1]*.7152+light[2]*.0722 > .24 ? "#111827" : "#ffffff";
+}
+function labelStyle(color,size) {
+  return {fill:color,stroke:labelOutlineColor(color),"font-size":size};
+}
+
 
 function svgElement(tag, attributes = {}) {
   const element = document.createElementNS(SVG_NS, tag);
@@ -23,6 +34,7 @@ export class GridlinesOverlay {
     this.selection = null;
     this.dragStart = null;
     this.selecting = false;
+    this.selectionMode = "major"; // Major selection covers the entire displayed G14 block.
     this.calibrating = null;
     this.calibrationStart = null;
     this.calibrationEnd = null;
@@ -79,6 +91,11 @@ export class GridlinesOverlay {
     this.svg = svgElement("svg", {"aria-hidden": "true"});
     this.root.append(this.svg);
     parent.append(this.root);
+    // Selection listens on Foundry's actual canvas in capture phase. The SVG
+    // stays pointer-transparent in selection mode, so right-drag still reaches
+    // Foundry's own pan handler instead of being swallowed by our overlay.
+    for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"])
+      view.addEventListener(type, this[{pointerdown:"onDown",pointermove:"onMove",pointerup:"onUp",pointercancel:"onCancel"}[type]], true);
     this.root.addEventListener("pointerdown", this.onDown);
     this.root.addEventListener("pointermove", this.onMove);
     this.root.addEventListener("pointerup", this.onUp);
@@ -98,6 +115,8 @@ export class GridlinesOverlay {
     this.frame = 0;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    if (this.view) for (const type of ["pointerdown", "pointermove", "pointerup", "pointercancel"])
+      this.view.removeEventListener(type, this[{pointerdown:"onDown",pointermove:"onMove",pointerup:"onUp",pointercancel:"onCancel"}[type]], true);
     document.removeEventListener("keydown", this.onEscape);
     this.root?.remove();
     this.root = null;
@@ -131,6 +150,18 @@ export class GridlinesOverlay {
     if (!this.selecting) this.dragStart = null;
     this.syncInteraction();
     this.schedule();
+  }
+  setSelectionMode(mode) {
+    if (!["major", "fine"].includes(mode)) throw new Error("Select major map cells or fine subcells");
+    if (this.selectionMode === mode) return;
+    this.selectionMode = mode;
+    this.dragStart = null;
+    this.setSelection(null);
+  }
+  selectedSpan(first, last = first) {
+    const a = this.axes;
+    return selectionRange(first, last, {col:a.majorEveryX,row:a.majorEveryY},
+      {row:a.a1Row,col:a.a1Col}, this.selectionMode);
   }
   syncInteraction() {
     this.root?.classList.toggle("gridlines-selecting", this.selecting && !this.pending && !this.geometryPreviewPending);
@@ -254,11 +285,13 @@ export class GridlinesOverlay {
     if (!this.selecting || this.pending || this.geometryPreviewPending || event.button !== 0) return;
     const cell = this.pointFromEvent(event);
     if (!cell) return;
+    const selected = this.selectedSpan(cell);
+    if (!selected) return; // Outside the chosen A1 major grid.
     event.preventDefault();
     event.stopPropagation();
     this.dragStart = cell;
-    this.setSelection(normalizeRange(cell));
-    try { this.root.setPointerCapture(event.pointerId); } catch { /* browser may already have lost capture */ }
+    this.setSelection(selected);
+    try { this.view.setPointerCapture(event.pointerId); } catch { /* browser may already have lost capture */ }
   }
 
   onMove(event) {
@@ -284,7 +317,8 @@ export class GridlinesOverlay {
     if (!this.dragStart) return;
     const cell = this.pointFromEvent(event);
     if (!cell) return;
-    this.setSelection(normalizeRange(this.dragStart, cell));
+    const selected = this.selectedSpan(this.dragStart, cell);
+    if (selected) this.setSelection(selected);
   }
 
   onUp(event) {
@@ -315,9 +349,12 @@ export class GridlinesOverlay {
     }
     if (!this.dragStart) return;
     const cell = this.pointFromEvent(event);
-    if (cell) this.setSelection(normalizeRange(this.dragStart, cell));
+    if (cell) {
+      const selected = this.selectedSpan(this.dragStart, cell);
+      if (selected) this.setSelection(selected);
+    }
     this.dragStart = null;
-    try { this.root.releasePointerCapture(event.pointerId); } catch { /* no capture */ }
+    try { this.view.releasePointerCapture(event.pointerId); } catch { /* no capture */ }
   }
 
   onCancel() {
@@ -331,7 +368,8 @@ export class GridlinesOverlay {
     this.schedule();
   }
   onContext(event) {
-    if (!this.selecting && !this.calibrating && !this.placementMode) return;
+    // Right-click and right-drag while selecting belong to Foundry canvas pan.
+    if (this.selecting || (!this.calibrating && !this.placementMode)) return;
     event.preventDefault();
     event.stopPropagation();
     this.onContextMenu();
@@ -414,7 +452,8 @@ export class GridlinesOverlay {
             for (let majorCol = firstMajorX; majorCol <= lastMajorX && majorCol - firstMajorX <= 80; majorCol++) {
               const atX = majorOrigin.x + majorCol * axes.majorEveryX * sizeX;
               const at = toScreen({x:atX, y:visibleWorld.y});
-              const lbl = svgElement("text", {x:at.x + 8, y:screenA.y + 15, class:"gridlines-axis-label", "text-anchor":"start"});
+              const lbl = svgElement("text", {x:at.x + 8, y:screenA.y + Math.max(15,axes.colLabelSize+3), class:"gridlines-axis-label", "text-anchor":"start",
+                ...labelStyle(axes.colLabelColor,axes.colLabelSize)});
               lbl.textContent = axes.coordinateScope === "major" ? columnName(majorCol) : columnName(majorCol*axes.majorEveryX);
               this.svg.append(lbl);
             }
@@ -423,7 +462,8 @@ export class GridlinesOverlay {
             for (let majorRow = firstMajorY; majorRow <= lastMajorY && majorRow - firstMajorY <= 80; majorRow++) {
               const atY = majorOrigin.y + majorRow * axes.majorEveryY * sizeY;
               const at = toScreen({x:visibleWorld.x, y:atY});
-              const lbl = svgElement("text", {x:screenA.x + 6, y:at.y + 27, class:"gridlines-axis-label", "text-anchor":"start"});
+              const lbl = svgElement("text", {x:screenA.x + 6, y:at.y + Math.max(27,axes.rowLabelSize+12), class:"gridlines-axis-label", "text-anchor":"start",
+                ...labelStyle(axes.rowLabelColor,axes.rowLabelSize)});
               lbl.textContent = String(1 + (axes.coordinateScope === "major" ? majorRow : majorRow*axes.majorEveryY));
               this.svg.append(lbl);
             }
@@ -434,7 +474,7 @@ export class GridlinesOverlay {
         // way to locate fine-cell positions without printing A/K/U everywhere.
         const drawRuler = axes.rulerMode === "on" || (axes.rulerMode === "auto" &&
           (axes.majorEveryX !== axes.minorDivisionsX || axes.majorEveryY !== axes.minorDivisionsY));
-        if (drawRuler && axes.coordinateScope === "major") {
+        if (drawRuler) {
           const inside = (x,y) => x >= visibleWorld.x && x <= visibleWorld.right && y >= visibleWorld.y && y <= visibleWorld.bottom;
           const headingY = majorOrigin.y + Math.min(sizeY * .24, 14 / Math.max(.001, Math.abs(toScreen({x:origin.x,y:origin.y+1}).y-toScreen({x:origin.x,y:origin.y}).y)));
           const headingX = majorOrigin.x + Math.min(sizeX * .15, 8);
@@ -444,14 +484,19 @@ export class GridlinesOverlay {
             const point={x:majorOrigin.x+(i+.5)*sizeX,y:headingY};
             if (!inside(point.x,point.y)) continue;
             const screen=toScreen(point);
-            const t=svgElement("text",{x:screen.x,y:screen.y,class:"gridlines-ruler-column","text-anchor":"middle"});
-            t.textContent=columnName(i);this.svg.append(t);
+            const t=svgElement("text",{x:screen.x,y:screen.y,class:"gridlines-ruler-column","text-anchor":"middle",
+              ...labelStyle(axes.subLabelColor,axes.subLabelSize)});
+            // If B starts ten fine cells after A, the interior ticks are 1–10;
+            // in legacy A/K/U mode they remain fine-cell letters A–J.
+            t.textContent=axes.coordinateScope === "major" ? String(i+1) : columnName(i);
+            this.svg.append(t);
           }
           if (heightOnScreen >= 13) for(let i=0;i<axes.majorEveryY && i<50;i++) {
             const point={x:headingX,y:majorOrigin.y+(i+.5)*sizeY};
             if (!inside(point.x,point.y)) continue;
             const screen=toScreen(point);
-            const t=svgElement("text",{x:screen.x,y:screen.y,class:"gridlines-ruler-row","text-anchor":"start"});
+            const t=svgElement("text",{x:screen.x,y:screen.y,class:"gridlines-ruler-row","text-anchor":"start",
+              ...labelStyle(axes.subLabelColor,axes.subLabelSize)});
             t.textContent=String(i+1);this.svg.append(t);
           }
         }

@@ -2,7 +2,7 @@
 
 A GM-focused Foundry VTT module for aligning a configurable grid overlay to printed map coordinates, finding named locations and shading selected cells. The overlay can use rectangular cells, independently of Foundry's **square movement and snapping grid**. No Tiles, Drawings or Regions are created for grid cells.
 
-**Version 0.1.7 — 2026-10-18.** Developed for Foundry V14; live Foundry v14 installation and two-client tests **have not been verified**. Use a backed-up **test world**, not an active campaign.
+**Version 0.1.8 — 2026-10-18.** Developed for Foundry V14; live Foundry v14 installation and two-client tests **have not been verified**. Use a backed-up **test world**, not an active campaign.
 
 ## First use: align a printed A/B/C, 1/2/3 map
 
@@ -11,8 +11,12 @@ A GM-focused Foundry VTT module for aligning a configurable grid overlay to prin
 3. Under **Grid visibility**, click **Hide Foundry Grid** to see only the Gridlines+ overlay while aligning it. This is temporary, local to your browser, and **does not change native snapping**. Closing the manager restores Foundry's grid visibility.
 4. Under **Grid Setup**, use **Drag Grid**, **Pick A1 Cell**, or the **10x10 / 5x5 / 1x1** guide. Optionally unlink **Cell Width / Cell Height** for rectangular overlay cells, and adjust X/Y offset. Preview changes before saving.
 5. Set **Major columns: every N fine cells** (default 10), **Major rows: every N fine cells** (default 10), and their separate minor-division intervals (default 5 each). The major map coordinates should read **A, B, C** and **1, 2, 3**, not the underlying fine-cell references A, K, U and 1, 11, 21. Set **Axis coordinate numbering → Major blocks** if this is a legacy Scene.
-6. If some underlying fine cells are not shown as gridlines, **First major block: fine-cell ruler → Automatic** reveals a small A–J / 1–10 guide inside the first major block. Those letters label *ten cells*; eleven boundary positions would be A–K.
-7. Click **Save Grid Setup** to commit overlay settings, or **Discard Preview** to restore them. If existing named ranges or shading could be affected, first make a recoverable backup and acknowledge the warning.
+6. If the overlay shows fewer lines than the fine-cell count, **First major block: fine-cell ruler → Automatic** identifies subcells: **1–10** across the first block when major columns are labeled **A, B, C**; **A–J** across when a legacy fine-column scheme labels major boundaries **A, K, U**. Row subcells use 1–10. This ruler is a *reference*, not an additional grid.
+7. Under **Coordinate label fonts**, separately set top-column letter size/color, left-row number size/color, and subcell ruler size/color (7–48 px). Changes preview live. Label outlines automatically contrast with font color to improve readability over artwork.
+8. Under **Select on map**, choose **Major map blocks** (default on new Scenes) or **Fine subcells**. A single click inside major block `G14` selects the **whole G14 region**, not a hidden fine cell. For a single fine cell inside G14, use `G14.3,4` (third subcolumn, fourth subrow); `G14.C4` also works. **Left-drag selects and right-drag pans** the native Foundry canvas.
+9. After shading, use **Clear Shading in Selection** to clear only selected cells, **Shading layers → Remove** to remove one saved layer, or **Clear All Shading** for the entire Scene. Multiple-layer and full-Scene clearing asks for confirmation. **Named ranges remain unchanged** when shading is removed.
+10. Select **Save Grid Setup** to commit overlay settings, or **Discard Preview** to restore them. If existing ranges or shading could be affected, first make a recoverable backup and acknowledge the warning.
+
 
 ### Match native Foundry and Gridlines+ geometry
 
@@ -28,10 +32,16 @@ A GM-focused Foundry VTT module for aligning a configurable grid overlay to prin
 
 **Changing Foundry's native grid is a real Scene update.** It can affect existing token/wall/tile/light alignment. This is a GM-only action with a readable before/after preview, a recoverable-backup checkbox, and a separate confirmation. Gridlines+ then requires its native-grid **Alignment Review**; saved locations and fine-cell IDs remain unchanged until the GM deliberately confirms a recovery choice. No automatic document movement or mass import occurs.
 
-### Fine-cell references and named ranges
+### Map references, subcells and named ranges
+
+**The visible coordinate is authoritative for new selections.** With 10 underlying fine cells across and down, `G14` means all 100 fine cells inside the major map square labeled G14. Shading and naming `G14` should cover the whole displayed square. In **Fine subcells** mode, `G14.3,4` means fine column 3, fine row 4 **relative to G14**, not absolute internal C4. `G14.C4` is an accepted alphabetic alias; explicit `cell:C4` remains a legacy absolute fine-cell reference. Go To and the selected-range summary use these visible coordinates, and named range listings show the same coordinate system.
+
+You can select multiple major blocks or multiple subcells; an entire major block formats as `G14`, while a partial range shows its fine endpoints (for example `G14.2,3:G14.4,5`). The first-block ruler uses numbers across the top in major A/B/C mode, and letters A–J across in legacy A/K/U mode.
+
+**Previously saved named ranges, fills, and IDs are not migrated or enlarged automatically.** If an older `Warehouse` was saved as a fine-cell rectangle rather than a whole major block, its stored shape is preserved; the manager labels the actual saved extent. Reselect and save a *new* whole-block range if needed rather than overwriting the existing record.
 
 - Ordinary map labels are major blocks: `A1`, `B2`, etc. The column and row major intervals can differ, for example a 10-cell-wide × 8-cell-high map block.
-- A major `B2` can cover many fine cells. Use `cell:D3` or `cell:D3:F5` in **Go To** for exact saved fine-cell references. Shading and named ranges continue to use those internal indices.
+- A major `B2` covers its entire visible rectangle. `B2.1,1` and `B2.A1` both refer to its first underlying fine cell. `cell:D3` remains available in **Go To** for existing absolute fine-cell indices; no stored flags are renumbered.
 - **Pick First Major Column** and **Pick First Major Row** each change one origin component without altering the other. **Pick A1 Cell** changes both.
 - Previously saved `majorEvery` / `minorDivisions` fields are still read and assigned to both axes when the new independent values are missing. Legacy Scenes with explicit fine-cell coordinate mode keep it until the GM chooses **Major blocks** and saves.
 - Named ranges and formatting IDs are preserved. Changes to grid size, origin, or major numbering can change the physical coverage or visible coordinate names of those saved indices; no automatic remapping takes place during Grid Setup.
@@ -46,9 +56,9 @@ A GM-focused Foundry VTT module for aligning a configurable grid overlay to prin
 
 ## Backup and rollback
 
-Before updating, save a **recoverable backup of the test world** (including Scene flags) and, for manual installs, the previous `Data/modules/gridlines` folder. Versions 0.1.6 and earlier are retained on GitHub for code rollback.
+Before updating, save a **recoverable backup of the test world** (including Scene flags) and, for manual installs, the previous `Data/modules/gridlines` folder. Versions 0.1.7 and earlier are retained on GitHub for code rollback.
 
-To roll back, disable the module, stop the server if manually replacing files, restore the previous ZIP/module directory, restart and refresh. **Restoring code alone does not reverse Scene edits.** If you saved new independent major-axis settings in 0.1.7, older releases may not display the same axes; use the matching world snapshot to restore earlier Scene settings when necessary. Native Foundry grid-size changes likewise require restoring the world snapshot, not just module code.
+To roll back, disable the module, stop the server if manually replacing files, restore the previous ZIP/module directory, restart and refresh. **Restoring code alone does not reverse Scene edits.** If you clear shading in 0.1.8, reverting only the module will **not restore deleted shading**. Recover that Scene from its world backup. Older code will ignore the new label font preferences and may show coordinates differently; code rollback alone does not undo saved geometry or coordinate settings. Native Foundry grid-size changes likewise require restoring the world snapshot, not just module code.
 
 ## Tests, support and status
 

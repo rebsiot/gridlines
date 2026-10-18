@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.8 — 2026-10-18 (Experimental alpha — visible coordinates and formatting controls)
+
+- **Named ranges follow visible map cells:** By default, selecting a major map block (e.g., `G14`) selects all underlying fine cells in that displayed block. Fine Subcells mode selects individual finer positions using relative subaddresses such as `G14.3,4` (numeric X,Y) or `G14.C4` (alphabetic alias). Go To and named-range listings use visible coordinates; `cell:` retains explicit legacy absolute fine indices. No old named ranges or IDs are automatically remapped.
+- **Relative first-block ruler:** Numeric 1–10 horizontal subcolumns when the major-map columns read A/B/C; letters A–J when legacy axes read A/K/U. Subrows use numbers. The ruler is reference-only and does not write Scene flags.
+- **Right-drag panning:** During cell selection the Gridlines SVG remains pointer-transparent. Left-pointer events are handled on the Foundry canvas for selection; right-pointer events are allowed through for native pan. Foundry v14 live interaction is still unverified.
+- **Shading removal:** Clear selected cells across all overlapping shading layers, splitting rectangular layers where necessary; remove one shading layer by ID; or clear every shading layer with explicit confirmation. Named ranges, original Scene IDs, token positions, Drawings, Tiles, Regions and Foundry native grid are untouched. Bulk/split changes require a world snapshot for recovery, as no undo stack is implemented.
+- **Label fonts:** Independent GM controls for top-column letters, side-row numbers and fine-cell ruler font sizes and font colors. Live SVG preview; automatically contrasting font outline. Existing Scene settings inherit previous visual defaults without migration.
+- **Preserved:** module ID `gridlines`, Scene-flag schema v1, stored range/format IDs and fine-cell indices, previous Grid Setup geometry and native grid matching. Only explicit GM actions save revised Scene flags.
+- **Verification:** 56 local Node automated/mock tests passed; scripts checked for syntax, full root-level ZIP audited, source and package hashes compared. No live Foundry v14 test or two-client test performed.
+- **Upgrade:** Back up test-world Scene data and module folder, update from the unchanged manifest, refresh browser. Previous v0.1.7 ZIP retained for code rollback. Restoring code alone does not recover explicitly cleared shading; restore the corresponding world snapshot.
+
 ## 0.1.7 - 2026-10-18 (Experimental alpha — alignment and coordinate clarity)
 
 - **Native grid visibility:** GM-local Hide/Show Foundry Grid and Show/Hide Gridlines+ controls. Hiding native lines does not change snapping, grid opacity, or the Scene. Visibility is restored on manager close or canvas teardown; unsupported Foundry mesh arrangements yield an error instead of silently pretending to hide lines.

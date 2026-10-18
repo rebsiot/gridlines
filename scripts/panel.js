@@ -1,6 +1,7 @@
-import {parseRange, normalizeRange, formatRange, overlayResolver, squareResolver, parseMajorRange, formatMajorRange, parseAnchoredFineRange} from "./coordinates.js";
+import {parseRange, normalizeRange, formatRange, overlayResolver, squareResolver, parseMajorRange, formatMajorRange, parseAnchoredFineRange, parseDisplayedRange, formatDisplayedRange} from "./coordinates.js";
 import {calibrateGuide, CALIBRATION_PRESETS} from "./calibration.js";
-import {geometrySnapshot, alignmentStatus, addFill, addNamedRange, normalizeAxes, validateAxes, overlayGeometryChanged} from "./model.js";
+import {geometrySnapshot, alignmentStatus, addFill, addNamedRange, normalizeAxes, validateAxes, overlayGeometryChanged,
+  previewClearShading, clearShadingInSelection, clearShadingLayer, clearAllShading} from "./model.js";
 import {NativeGridDisplay, copyFoundryGrid, planNativeGridMatch} from "./native-grid.js";
 
 const uid = () => globalThis.crypto?.randomUUID?.() ?? foundry.utils.randomID();
@@ -198,13 +199,23 @@ export class GridlinesPanel {
     const exactCell = target.toLowerCase().startsWith("cell:");
     const anchor={row:axes.a1Row,col:axes.a1Col};
     const range = this.validateRange(named?.range ?? (exactCell ? parseRange(query) : axes.coordinateScope === "cell"
-      ? parseAnchoredFineRange(query, anchor) : parseMajorRange(query, {col: axes.majorEveryX, row: axes.majorEveryY}, anchor)));
+      ? parseAnchoredFineRange(query, anchor) : parseDisplayedRange(query, {col: axes.majorEveryX, row: axes.majorEveryY}, anchor)));
     const resolver = overlayResolver(canvas.grid, canvas.dimensions.sceneRect, axes);
     this.overlay.setSelection(range);
     const box = resolver.rangeBounds(range), rect = canvas.dimensions.sceneRect;
     const x0 = Math.max(box.x, rect.x), x1 = Math.min(box.right,rect.x+rect.width);
     const y0 = Math.max(box.y, rect.y), y1 = Math.min(box.bottom,rect.y+rect.height);
     await canvas.animatePan({x:(x0+x1)/2,y:(y0+y1)/2,duration:350});
+  }
+
+  /** A destructive operation is confirmed by Foundry or the browser, never implicitly approved. */
+  async confirmShadingClear(count, scope) {
+    const text = `Clear ${count} shading layer${count === 1 ? "" : "s"} ${scope}? Named ranges and Scene objects will remain unchanged. Back up this Scene before removing large sets of shading.`;
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof DialogV2?.confirm === "function")
+      return Boolean(await DialogV2.confirm({window:{title:"Remove Gridlines+ shading"},content:`<p>${text}</p>`}));
+    if (typeof globalThis.window?.confirm === "function") return Boolean(globalThis.window.confirm(text));
+    throw new Error("Confirmation dialog unavailable; shading was not removed");
   }
 
   render() {
@@ -417,6 +428,17 @@ export class GridlinesPanel {
     const lineColor=field("Gridline color", "color", settingsFields, draft.color);
     const lineAlpha=field("Gridline opacity %", "number", settingsFields, String(Math.round(draft.alpha*100)));
     lineAlpha.min="0";lineAlpha.max="100";lineAlpha.step="1";
+    const labelSettings = node("div",options,undefined,"gridlines-calibration-controls");
+    node("strong",labelSettings,"Coordinate label fonts (live preview)");
+    const fontFields = node("div",labelSettings,undefined,"gridlines-actions");
+    const colLabelSize = field("Column letter size (px)","number",fontFields,String(draft.colLabelSize));
+    const rowLabelSize = field("Row number size (px)","number",fontFields,String(draft.rowLabelSize));
+    const subLabelSize = field("Subcell label size (px)","number",fontFields,String(draft.subLabelSize));
+    for(const item of [colLabelSize,rowLabelSize,subLabelSize]) { item.min="7";item.max="48";item.step="1"; }
+    const colLabelColor = field("Column letter color","color",fontFields,draft.colLabelColor);
+    const rowLabelColor = field("Row number color","color",fontFields,draft.rowLabelColor);
+    const subLabelColor = field("Subcell label color","color",fontFields,draft.subLabelColor);
+    node("small",labelSettings,"Row and column colors are independent. Label outlines automatically contrast with the chosen font color over map artwork.");
     const scopeWrap=node("label",options,undefined,"gridlines-field");
     node("span",scopeWrap,"Axis coordinate numbering");
     const scope=node("select",scopeWrap);
@@ -446,6 +468,8 @@ export class GridlinesPanel {
       rulerMode:ruler.value,
       majorWidth:Number(majorWidth.value),minorWidth:Number(minorWidth.value),
       color:lineColor.value,alpha:Number(lineAlpha.value)/100,
+      colLabelSize:Number(colLabelSize.value),rowLabelSize:Number(rowLabelSize.value),subLabelSize:Number(subLabelSize.value),
+      colLabelColor:colLabelColor.value,rowLabelColor:rowLabelColor.value,subLabelColor:subLabelColor.value,
       coordinateScope:scope.value,labels:labels.checked,enabled:showLines.checked
     });
     const onPreview=(source=null)=>{
@@ -462,7 +486,8 @@ export class GridlinesPanel {
         if (this.overlay.geometryPreviewPending) this.overlay.setSelecting(false);
       } catch { /* Intermediate invalid numeric input: wait for complete value. */ }
     };
-    for(const ctl of [width,height,link,ox,oy,major,majorY,divisions,divisionsY,ruler,majorWidth,minorWidth,lineColor,scope,labels,showLines,lineAlpha])
+    for(const ctl of [width,height,link,ox,oy,major,majorY,divisions,divisionsY,ruler,majorWidth,minorWidth,lineColor,scope,labels,showLines,lineAlpha,
+      colLabelSize,rowLabelSize,subLabelSize,colLabelColor,rowLabelColor,subLabelColor])
       ctl.addEventListener(ctl.type==="checkbox"||ctl.tagName?.toLowerCase()==="select"?"change":"input",()=>onPreview(ctl));
     const locationAffected=()=>{
       const next=validateAxes(value());
@@ -515,10 +540,19 @@ export class GridlinesPanel {
       if (!this.overlay.root) throw new Error("Gridlines overlay could not attach to Foundry's canvas; check the browser console");
       this.overlay.setSelecting(!this.overlay.selecting);
     }), selectionTools);
+    const modeWrap=node("label",selectionTools,undefined,"gridlines-field");
+    node("span",modeWrap,"Select on map");
+    const mode=node("select",modeWrap);
+    for(const [v,label] of [["major","Major map blocks (G14 = whole block)"],["fine","Fine subcells (G14.3,4)"]]) {
+      const option=node("option",mode,label);option.value=v;
+    }
+    mode.value=this.overlay.selectionMode ?? "major";
+    mode.addEventListener("change",()=>{this.overlay.setSelectionMode(mode.value);this.refresh();});
+    node("small",selectionTools,"Left-drag selects. Right-drag remains Foundry map pan. Major mode selects whole displayed blocks; Fine mode selects individual underlying cells.");
     const nav = node("div", root, undefined, "gridlines-section");
     node("strong", nav, "Go To");
     const navRow = node("div", nav, undefined, "gridlines-actions");
-    const go = node("input", navRow); go.type = "text"; go.placeholder = "G14 or Warehouse"; go.value = this.inputs.go;
+    const go = node("input", navRow); go.type = "text"; go.placeholder = "G14, G14.3,4 or Warehouse"; go.value = this.inputs.go;
     go.setAttribute("aria-label", "Coordinate or named range");
     go.addEventListener("input", () => { this.inputs.go = go.value; });
     const navigate = () => this.run(() => this.go(go.value));
@@ -526,12 +560,14 @@ export class GridlinesPanel {
     button("Go", navigate, navRow);
 
     node("small", nav, draft.coordinateScope === "major"
-      ? `A1 is a ${draft.majorEveryX}×${draft.majorEveryY} fine-cell major block. Use cell:D3 to navigate to an exact internal fine cell. The first-block ruler shows A–J / 1–10 when needed.`
+      ? `G14 is the entire ${draft.majorEveryX}×${draft.majorEveryY} major block. G14.3,4 is fine subcolumn 3, row 4 inside it (G14.C4 also works). cell:D3 targets a legacy absolute fine cell.`
       : "Existing Scene coordinates use individual cells (legacy mode). Pick A1 to change their displayed numbering; cell:D3 keeps the original fine-cell indices.");
     const selection = node("div", root, undefined, "gridlines-section");
-    node("strong", selection, this.selection
-      ? `Selected fine cells: ${formatRange(this.selection)} · Major ${formatMajorRange(this.selection, {col:savedAxes.majorEveryX,row:savedAxes.majorEveryY}, {row:savedAxes.a1Row,col:savedAxes.a1Col})}` : "No cells selected");
-    node("p", selection, "Drag across cells, then shade or name them. Major axes are labels for blocks; exact saved selections use fine-cell indices.");
+    const visibleAddress = r => savedAxes.coordinateScope === "major"
+      ? formatDisplayedRange(r,{col:savedAxes.majorEveryX,row:savedAxes.majorEveryY},{row:savedAxes.a1Row,col:savedAxes.a1Col},"numbers")
+      : `cell:${formatRange(r)}`;
+    node("strong", selection, this.selection ? `Selected: ${visibleAddress(this.selection)}` : "No cells selected");
+    node("p",selection,"Major mode selects the whole visible G14 block. Fine Subcells mode selects G14.3,4; saved records keep their original fine-cell indices.");
     const settings = node("div", root, undefined, "gridlines-actions");
     const color = field("Fill", "color", settings, this.inputs.color);
     color.addEventListener("input", () => { this.inputs.color = color.value; });
@@ -545,11 +581,44 @@ export class GridlinesPanel {
       await this.service.edit(scene, state.revision, current => {
         addFill(current, selected, color.value, Number(opacity.value) / 100, uid());
       });
-      this.announce(`Shaded ${formatRange(selected)}`);
+      this.announce(`Shaded ${visibleAddress(selected)}`);
     }), selection, {disabled: !this.selection});
 
+    const shadeActions = node("div",selection,undefined,"gridlines-actions");
+    button("Clear Shading in Selection",()=>this.run(async()=>{
+      if(this.overlay.geometryPreviewPending || this.overlay.calibrating || this.overlay.placementMode)
+        throw new Error("Save or discard the grid setup preview before clearing shading");
+      const selected=this.validateRange(this.currentSelection());
+      const preview=previewClearShading(state,selected);
+      if(!preview.affected) {this.announce("No shading overlaps the selected cells");return;}
+      if(preview.affected>1 && !await this.confirmShadingClear(preview.affected,`intersecting ${visibleAddress(selected)}`)) return;
+      await this.service.edit(scene,state.revision,current=>{
+        clearShadingInSelection(current,selected,uid);
+      });
+      this.announce(`Cleared shading in ${visibleAddress(selected)}; saved names remain intact`);
+    }),shadeActions,{disabled:!this.selection||!state.formats.length});
+    button(`Clear All Shading (${state.formats.length})`,()=>this.run(async()=>{
+      if(this.overlay.geometryPreviewPending || this.overlay.calibrating || this.overlay.placementMode)
+        throw new Error("Save or discard the grid setup preview before clearing shading");
+      if(!state.formats.length) return;
+      if(!await this.confirmShadingClear(state.formats.length,"on this Scene")) return;
+      await this.service.edit(scene,state.revision,current=>clearAllShading(current));
+      this.announce("All Gridlines+ shading cleared; named ranges were preserved");
+    }),shadeActions,{disabled:!state.formats.length});
+    const layers = node("details",selection,undefined,"gridlines-section");
+    node("summary",layers,`Shading layers (${state.formats.length}) — remove individually`);
+    for(const layer of state.formats){
+      const item=node("div",layers,undefined,"gridlines-name-row");
+      node("span",item,`${visibleAddress(layer.range)} · ${layer.fill}`);
+      button("Remove",()=>this.run(async()=>{
+        if(this.overlay.geometryPreviewPending || this.overlay.calibrating || this.overlay.placementMode)
+          throw new Error("Save or discard the grid setup preview before removing shading");
+        await this.service.edit(scene,state.revision,current=>clearShadingLayer(current,layer.id));
+        this.announce(`Removed shading layer ${visibleAddress(layer.range)}; named ranges unchanged`);
+      }),item);
+    }
     const names = node("div", root, undefined, "gridlines-section");
-    node("strong", names, "Named Ranges");
+    node("strong", names, "Named Ranges (visible coordinates)");
     const naming = node("div", names, undefined, "gridlines-actions");
     const name = node("input", naming); name.type = "text"; name.maxLength = 64; name.placeholder = "Warehouse"; name.value = this.inputs.name;
     name.setAttribute("aria-label", "Name selected cells");
@@ -560,13 +629,13 @@ export class GridlinesPanel {
       const selected = this.validateRange(this.currentSelection());
       await this.service.edit(scene, state.revision, current => addNamedRange(current, name.value, selected, uid()));
       this.inputs.name = "";
-      this.announce(`Saved named range ${name.value}`);
+      this.announce(`Saved ${name.value} at ${visibleAddress(selected)}`);
     }), naming, {disabled: !this.selection});
     if (!state.namedRanges.length) node("p", names, "No saved ranges yet.");
     for (const range of state.namedRanges) {
       const item = node("div", names, undefined, "gridlines-name-row");
       const label = node("span", item);
-      label.textContent = `${range.name} · ${formatRange(range.range)}`;
+      label.textContent = `${range.name} · ${visibleAddress(range.range)}`;
       button("Go", () => this.run(() => this.go(range.name)), item);
     }
     const footer = node("small", root, "Prototype: GM authoring only. All named locations are stored in Scene flags; do not enter GM secrets. No automation or player broadcast yet.", "gridlines-footer");

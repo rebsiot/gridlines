@@ -85,7 +85,7 @@ test('DOM/SVG overlay mock renders and cell selection remains non-document based
     flush();
     assert.equal(overlay.svg.children.find(n=>n.tag==='path' && n.attributes.class==='gridlines-major-axes').attributes.stroke,'#65baff');
     assert.ok(oldChildCount>=1);
-    overlay.setSceneState({...state, axes:{...state.axes,majorEvery:2,minorDivisions:2,coordinateScope:'major'}});
+    overlay.setSceneState({...state, axes:{...state.axes,majorEvery:2,majorEveryX:2,majorEveryY:2,minorDivisions:2,minorDivisionsX:2,minorDivisionsY:2,coordinateScope:'major'}});
     flush();
     const labels=overlay.svg.children.filter(n=>n.tag==='text').map(n=>n.textContent);
     assert.ok(labels.includes('A') && labels.includes('B') && labels.includes('C'),'letters label major axes');
@@ -93,7 +93,7 @@ test('DOM/SVG overlay mock renders and cell selection remains non-document based
     assert.ok(!labels.includes('A1'),'labels are not shown inside every small cell');
     overlay.setSceneState(state);
     flush();
-    overlay.setSelecting(true);flush();
+    overlay.setSelectionMode('fine');overlay.setSelecting(true);flush();
     overlay.onDown({button:0,pointerId:1,clientX:105,clientY:105,preventDefault(){},stopPropagation(){}});
     overlay.onMove({clientX:295,clientY:295});
     overlay.onUp({pointerId:1,clientX:295,clientY:295});

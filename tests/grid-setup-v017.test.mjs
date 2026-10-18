@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {normalizeAxes,validateAxes,geometrySnapshot,addNamedRange} from '../scripts/model.js';
+import {normalizeAxes,validateAxes,geometrySnapshot,addNamedRange,addFill} from '../scripts/model.js';
 import {parseMajorRange,formatMajorRange,parseRange} from '../scripts/coordinates.js';
 import {NativeGridDisplay,copyFoundryGrid,planNativeGridMatch} from '../scripts/native-grid.js';
 import {SceneService} from '../scripts/service.js';
@@ -109,7 +109,7 @@ test('panel can display major A/B/C and a fine-cell ruler without writing flags'
  assert.deepEqual([overlay.previewAxes.majorEveryX,overlay.previewAxes.majorEveryY,
   overlay.previewAxes.minorDivisionsX,overlay.previewAxes.minorDivisionsY],[8,6,4,3]);
  assert.ok(all(overlay.svg,e=>e.attributes.class==='gridlines-axis-label'&&e.textContent==='B').length,'should label second major block B');
- assert.ok(all(overlay.svg,e=>e.attributes.class==='gridlines-ruler-column'&&e.textContent==='A').length,'fine-cell ruler letters in first block');
+ assert.ok(all(overlay.svg,e=>e.attributes.class==='gridlines-ruler-column'&&e.textContent==='1').length,'numeric subcolumn labels in first major block');
  assert.ok(all(overlay.svg,e=>e.attributes.class==='gridlines-ruler-row'&&e.textContent==='1').length,'fine-cell ruler rows in first block');
  await press(panel.root,'Save Grid Setup');assert.equal(scene.writes,2);
  await panel.go('B2');const range=overlay.selection;
@@ -163,4 +163,113 @@ test('reverse match previews then needs backup and explicit dialog; rejects rect
  assert.equal(service.read(scene).baseline.size,100,'baseline stays stale for mandatory GM alignment review');
  assert.equal(service.getStatus(scene).pending,true);
  assert.equal(scene.writes,2,'native update must not overwrite Gridlines flags');
+}));
+
+test('Grid Setup previews row/column/subcell text sizes and colors without writing flags',()=>harness(async({panel,overlay,scene,flush})=>{
+  const changes=[
+    ['Column letter size (px)','23'],['Row number size (px)','17'],['Subcell label size (px)','9'],
+    ['Column letter color','#050505'],['Row number color','#00ff88'],['Subcell label color','#ff00cc']
+  ];
+  for(const [label,value] of changes){ const el=input(panel.root,label);el.value=value;el.act('input'); }
+  flush();
+  assert.equal(scene.writes,1,'font previews cannot write Scene flags');
+  const axes=overlay.previewAxes;
+  assert.equal(axes.colLabelSize,23);assert.equal(axes.rowLabelSize,17);assert.equal(axes.subLabelSize,9);
+  assert.equal(axes.colLabelColor,'#050505');assert.equal(axes.rowLabelColor,'#00ff88');assert.equal(axes.subLabelColor,'#ff00cc');
+  const axisLabels=all(overlay.svg,e=>e.attributes.class==='gridlines-axis-label');
+  assert.ok(axisLabels.some(x=>x.textContent==='A'&&x.attributes['font-size']==='23'&&x.attributes.fill==='#050505'&&x.attributes.stroke==='#ffffff'),'dark column font gets a light outline');
+  assert.ok(axisLabels.some(x=>x.textContent==='1'&&x.attributes['font-size']==='17'&&x.attributes.fill==='#00ff88'&&x.attributes.stroke==='#111827'),'light row font gets a dark outline');
+  const ruler=all(overlay.svg,e=>e.attributes.class==='gridlines-ruler-column');
+  assert.ok(ruler.some(x=>x.attributes['font-size']==='9'&&x.attributes.fill==='#ff00cc'));
+  await press(panel.root,'Save Grid Setup');
+  assert.equal(scene.writes,2);
+  assert.equal(scene.getFlag().axes.colLabelSize,23);
+  assert.equal(scene.getFlag().axes.rowLabelColor,'#00ff88');
+  assert.equal(overlay.previewAxes,null);
+}));
+
+test('major click selects whole visible block and fine mode clicks relative subcells; right-drag remains native',()=>harness(async({panel,overlay,scene,flush})=>{
+  const view=overlay.view;
+  overlay.setSelecting(true);
+  let intercepted=0;
+  const event=(button,x,y)=>({button,pointerId:1,clientX:x,clientY:y,
+    preventDefault(){intercepted++;},stopPropagation(){intercepted++;}});
+  const right=event(2,123,123);
+  view.events.pointerdown(right);view.events.pointermove(event(2,143,143));view.events.pointerup(right);
+  assert.equal(intercepted,0,'right-click and right-drag must not block native pan');
+  assert.equal(overlay.selection,null);
+  view.events.pointerdown(event(0,110,130));
+  view.events.pointerup(event(0,110,130));
+  assert.equal(intercepted,2,'left-click is intentionally captured for selection');
+  assert.deepEqual(overlay.selection,parseMajorRange('A1',{col:10,row:10}));
+  assert.ok(all(panel.root,e=>e.textContent==='Selected: A1').length,'selection label must reflect major block');
+  const mode=input(panel.root,'Select on map');mode.value='fine';mode.act('change');
+  assert.equal(overlay.selectionMode,'fine');
+  view.events.pointerdown(event(0,214,245));view.events.pointerup(event(0,214,245));
+  assert.deepEqual(overlay.selection,parseRange('C3'));
+  assert.ok(all(panel.root,e=>e.textContent==='Selected: A1.3,3').length);
+  assert.equal(scene.writes,1,'selecting any cells cannot modify Scene flags');
+  flush();
+}));
+
+test('shading can be cleared by selection, individually, or entirely while preserving names',()=>harness(async({panel,overlay,service,scene,dialog})=>{
+  const state=service.read(scene);
+  await service.edit(scene,state.revision,curr=>{
+    addNamedRange(curr,'Warehouse',parseMajorRange('A1',{col:10,row:10}),'w-1');
+    addFill(curr,parseRange('A1:E5'),'#123456',.3,'f-a');
+    addFill(curr,parseRange('C3:G7'),'#234567',.4,'f-b');
+  });
+  panel.refresh();
+  overlay.setSelection(parseRange('D4'));
+  await press(panel.root,'Clear Shading in Selection');
+  assert.equal(dialog.length,1,'intersecting two layers requires explicit confirmation');
+  const after=service.read(scene);
+  assert.equal(after.formats.length,8);
+  assert.equal(after.namedRanges.length,1);
+  assert.ok(all(panel.root,e=>e.textContent.includes('Warehouse · A1')).length);
+  await press(panel.root,'Remove');
+  assert.equal(service.read(scene).formats.length,7,'single layer removal affects one layer');
+  await press(panel.root,'Clear All Shading (7)');
+  assert.equal(dialog.length,2,'bulk removal requires confirmation');
+  const final=service.read(scene);
+  assert.equal(final.formats.length,0);
+  assert.deepEqual(final.namedRanges,after.namedRanges,'clearing shading cannot remove a named range');
+}));
+
+test('subcolumn ruler uses numbers with major B and letters with legacy K; neither mode writes flags',()=>harness(async({panel,overlay,scene,service,flush})=>{
+  const defaults=service.read(scene);
+  const cols=()=>all(overlay.svg,x=>x.attributes.class==='gridlines-ruler-column').map(x=>x.textContent);
+  assert.ok(cols().includes('1') && cols().includes('10'),'B-mode uses 1–10 relative horizontal indices');
+  assert.ok(!cols().includes('A'));
+  overlay.setSceneState({...defaults,axes:{...defaults.axes,coordinateScope:'cell'}});
+  flush();
+  assert.ok(cols().includes('A')&&cols().includes('J'),'K-mode uses A–J relative letters');
+  assert.ok(!cols().includes('10'));
+  assert.equal(scene.writes,1);
+}));
+
+test('canceling a full-Scene shading clear cannot write flags or alter any saved content',()=>harness(async({panel,service,scene})=>{
+  let state=service.read(scene);
+  await service.edit(scene,state.revision,old=>{
+    addFill(old,parseRange('A1:D4'),'#6622aa',.5,'saved-fill');
+    addNamedRange(old,'Important Room',parseRange('A1:J10'),'saved-range');
+  });
+  panel.refresh();state=service.read(scene);
+  const beforeWrites=scene.writes;
+  globalThis.foundry.applications.api.DialogV2.confirm=async()=>false;
+  await press(panel.root,'Clear All Shading (1)');
+  assert.equal(scene.writes,beforeWrites);
+  assert.deepEqual(service.read(scene),state);
+}));
+
+test('Go To major and relative subcell coordinates resolves to the expected saved fine indices',()=>harness(async({panel,overlay,service,scene})=>{
+  await panel.go('A1.3,4');
+  assert.deepEqual(overlay.selection,parseRange('C4'));
+  await panel.go('A1.C4');
+  assert.deepEqual(overlay.selection,parseRange('C4'));
+  await panel.go('A1');
+  assert.deepEqual(overlay.selection,parseRange('A1:J10'));
+  await panel.go('cell:C4');
+  assert.deepEqual(overlay.selection,parseRange('C4'));
+  assert.equal(scene.writes,1,'navigation must never write Scene flags');
 }));

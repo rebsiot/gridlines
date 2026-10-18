@@ -1,5 +1,5 @@
 import {MODULE_ID, geometrySnapshot, alignmentStatus} from "./model.js";
-import {formatAddress, parseAddress, parseRange, formatRange, squareResolver, overlayResolver, parseMajorRange, formatMajorRange} from "./coordinates.js";
+import {formatAddress, parseAddress, parseRange, formatRange, squareResolver, overlayResolver, parseMajorRange, formatMajorRange, parseDisplayedRange, formatDisplayedRange} from "./coordinates.js";
 import {SceneService} from "./service.js";
 import {GridlinesOverlay} from "./overlay.js";
 import {GridlinesPanel} from "./panel.js";
@@ -105,7 +105,7 @@ Hooks.once("ready", () => {
     getState: (scene = canvas?.scene) => scene ? structuredClone(service.read(scene)) : null,
     getAlignmentStatus: (scene = canvas?.scene) => scene ? service.getStatus(scene) : null,
     openManager: () => { if (!game.user?.isGM) return false; panel.open(); return true; },
-    formatAddress, parseAddress, parseRange, formatRange, parseMajorRange, formatMajorRange,
+    formatAddress, parseAddress, parseRange, formatRange, parseMajorRange, formatMajorRange, parseDisplayedRange, formatDisplayedRange,
     resolveAt: (point) => canvas?.ready && canvas.grid?.isSquare
       ? overlayResolver(canvas.grid, canvas.dimensions.sceneRect, service.read(canvas.scene)?.axes).locate(point) : null
   });
