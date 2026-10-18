@@ -192,6 +192,24 @@ export function addNamedRange(state, name, range, id) {
   state.namedRanges.push({id, name: clean, range: normalizeRange(range.from, range.to)});
 }
 
+/** Rename/delete a saved name without altering its immutable ID, area, or shading. */
+export function renameNamedRange(state, id, name) {
+  const entry = state.namedRanges.find(item => item.id === id);
+  if (!entry) throw new Error("Named area no longer exists; refresh Gridlines+");
+  const clean = String(name ?? "").trim();
+  if (!clean || clean.length > 64 || /[\x00-\x1F]/.test(clean))
+    throw new Error("Name must contain 1–64 ordinary characters");
+  if (state.namedRanges.some(item => item.id !== id && item.name.toLocaleLowerCase() === clean.toLocaleLowerCase()))
+    throw new Error("A range with that name already exists on this Scene");
+  entry.name = clean;
+}
+
+export function removeNamedRange(state, id) {
+  const before = state.namedRanges.length;
+  state.namedRanges = state.namedRanges.filter(entry => entry.id !== id);
+  if (state.namedRanges.length === before) throw new Error("Named area no longer exists; refresh Gridlines+");
+}
+
 export function addFill(state, range, color, opacity, id) {
   if (state.formats.length >= MAX_FORMATS) throw new Error("This Scene has reached the formatting limit");
   if (!/^#[0-9A-Fa-f]{6}$/.test(color) || !Number.isFinite(opacity) || opacity < 0 || opacity > 1) throw new Error("Invalid fill style");

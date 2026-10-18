@@ -100,7 +100,7 @@ const find=(root,pred)=>all(root,pred)[0];
 // helper to preserve disabled state when locating a button under test.
 async function click(root,label){const b=find(root,x=>x.tag==='button'&&x.textContent===label);assert.ok(b,`Missing ${label}`);assert.notEqual(b.disabled,true,`${label} disabled`);return b.act('click');}
 function input(root,label){const wrap=find(root,e=>e.tag==='label'&&e.children.some(c=>c.tag==='span'&&c.textContent===label));assert.ok(wrap,`Missing ${label}`);return find(wrap,e=>e.tag==='input'||e.tag==='select');}
-function shadingDetails(root){return find(root,e=>e.tag==='details'&&e.children.some(c=>c.tag==='summary'&&c.textContent.startsWith('Shading layers')));}
+function shadingDetails(root){return find(root,e=>e.tag==='details'&&e.children.some(c=>c.tag==='summary'&&c.textContent.startsWith('Map Areas')));}
 
 async function harness(fn){
   const original={document:globalThis.document,game:globalThis.game,canvas:globalThis.canvas,ui:globalThis.ui,
@@ -168,10 +168,10 @@ test('shading accordion stays open after Locate, Select, Configure and Remove, t
   assert.equal(service.read(scene).formats[0].fill,'#aabbcc');
   assert.equal(service.read(scene).formats[0].opacity,.72);
   assert.equal(shadingDetails(panel.root).open,true);
-  await click(panel.root,'Remove');assert.equal(service.read(scene).formats.length,1);
+  await click(panel.root,'Remove Shading');assert.equal(service.read(scene).formats.length,1);
   assert.equal(shadingDetails(panel.root).open,true);
-  await click(panel.root,'Remove');assert.equal(service.read(scene).formats.length,0);
-  assert.equal(shadingDetails(panel.root).open,false);
+  await click(panel.root,'Remove Shading');assert.equal(service.read(scene).formats.length,0);
+  assert.equal(shadingDetails(panel.root).open,true,'Name-only map area keeps Map Areas expanded');
   assert.equal(service.read(scene).namedRanges.length,1);
 }));
 
@@ -266,4 +266,108 @@ test('GM closing Region preview and cancelling a shading edit writes nothing',()
   assert.equal(scene.writes,baselineWrites);
   assert.equal(scene.created.length,0);
   assert.equal(shadingDetails(panel.root).open,true);
+}));
+
+// v0.1.11: One Map Areas workflow for matching names and shades.
+test('Map Areas groups an existing named range and shade in one row, with no data conversion',()=>harness(async({panel,scene,service})=>{
+  const state=service.read(scene);
+  const matches=all(panel.root,x=>x.className?.split?.(' ').includes('gridlines-map-area-row'));
+  assert.equal(matches.length,2);
+  assert.ok(all(matches[0],x=>x.tag==='strong'&&x.textContent.includes('Harbor')).length);
+  assert.ok(all(matches[0],x=>x.tag==='button'&&x.textContent==='Configure').length,'matched shade has configure');
+  assert.equal(service.read(scene).namedRanges[0].id,'range-1');
+  assert.equal(service.read(scene).formats[0].id,'layer-one');
+  assert.equal(shadingDetails(panel.root).open,true);
+  assert.equal(scene.writes,0,'viewing group never mutates Scene flags');
+}));
+
+test('Add Name on a shaded area creates a separate alias in the same group',()=>harness(async({panel,scene,service})=>{
+  const initial=service.read(scene);
+  await click(panel.root,'Add Name');
+  const newName=input(panel.root,'New name for this area');newName.value='Loading Docks';await newName.act('input');
+  await click(panel.root,'Save Area Name');
+  const result=service.read(scene);
+  assert.equal(result.namedRanges.length,2);
+  assert.equal(result.namedRanges[0].id,'range-1');
+  assert.equal(result.namedRanges[1].name,'Loading Docks');
+  assert.deepEqual(result.namedRanges[1].range,result.formats[0].range);
+  assert.deepEqual(result.formats,initial.formats);
+  assert.equal(all(panel.root,x=>x.className?.split?.(' ').includes('gridlines-map-area-row')).length,2);
+  assert.equal(shadingDetails(panel.root).open,true);
+}));
+
+test('Renaming and removal of a saved name preserve shading, ids and player-visibility defaults',()=>harness(async({panel,scene,service,dialogs})=>{
+  const original=service.read(scene);
+  await click(panel.root,'Rename');
+  const rename=input(panel.root,'Rename map area');rename.value='Marina';await rename.act('input');
+  await click(panel.root,'Save Rename');
+  const renamed=service.read(scene);
+  assert.deepEqual(renamed.namedRanges[0].range,original.namedRanges[0].range);
+  assert.equal(renamed.namedRanges[0].id,'range-1');
+  assert.equal(renamed.namedRanges[0].name,'Marina');
+  await click(panel.root,'Remove Name');
+  const result=service.read(scene);
+  assert.equal(result.namedRanges.length,0);
+  assert.deepEqual(result.formats,original.formats);
+  assert.equal(dialogs.length,1,'name deletion requires an explicit confirmation');
+  assert.equal(shadingDetails(panel.root).open,true,'shade-only area persists');
+}));
+
+test('Name-only map areas can be shaded directly and new shading stays GM-only',()=>harness(async({panel,scene,service})=>{
+  const original=service.read(scene);
+  await service.edit(scene,original.revision,state=>{
+    addNamedRange(state,'Depot',parseRange('J6:K7'),'name-depot');
+  });
+  panel.refresh();
+  await click(panel.root,'Shade Area');
+  const state=service.read(scene);
+  assert.equal(state.formats.length,3);
+  const shade=state.formats[2];
+  assert.deepEqual(shade.range,parseRange('J6:K7'));
+  assert.equal(shade.playerVisible,false);
+  assert.equal(state.namedRanges.length,2);
+  assert.equal(shadingDetails(panel.root).open,true);
+}));
+
+test('Clear Selection, Stop Selecting and Close Manager all clear transient selection highlight',()=>harness(async({panel,overlay,scene,flush})=>{
+  const baselineWrites=scene.writes;
+  overlay.setSelecting(true);overlay.setSelection(parseRange('B2:C3'));flush();
+  assert.ok(panel.selection);assert.ok(overlay.selection);
+  await click(panel.root,'Clear Selection');flush();
+  assert.equal(overlay.selection,null);assert.equal(panel.selection,null);
+  overlay.setSelection(parseRange('B2:C3'));flush();
+  await click(panel.root,'Stop Selecting Cells');flush();
+  assert.equal(overlay.selection,null);assert.equal(panel.selection,null);
+  overlay.setSelection(parseRange('B2:C3'));overlay.flashRange(parseRange('D4:E5'));
+  panel.close();flush();
+  assert.equal(panel.visible,false);
+  assert.equal(overlay.selection,null);
+  assert.equal(overlay.locatedRange,null);
+  assert.equal(panel.selection,null);
+  panel.open();flush();
+  assert.equal(panel.selection,null,'reopening manager starts with no stale highlight');
+  assert.equal(scene.writes,baselineWrites,'temporary highlights cannot write Scene state');
+}));
+
+test('Cancel deletion of map name writes nothing and leaves grouped area unchanged',()=>harness(async({panel,service,scene})=>{
+  const baseline=service.read(scene),writes=scene.writes;
+  globalThis.foundry.applications.api.DialogV2.confirm=async()=>false;
+  await click(panel.root,'Remove Name');
+  assert.deepEqual(service.read(scene),baseline);
+  assert.equal(scene.writes,writes);
+  assert.equal(shadingDetails(panel.root).open,true);
+}));
+
+test('Canvas detach clears selection before attaching a different Scene',()=>harness(async({panel,overlay,scene,flush})=>{
+  const writes=scene.writes;
+  overlay.setSelecting(true);
+  overlay.setSelection(parseRange('B2:C3'));
+  overlay.dispose();
+  assert.equal(overlay.selection,null);
+  assert.equal(overlay.selecting,false);
+  assert.equal(panel.selection,null);
+  overlay.attach();overlay.setSceneState(panel.service.read(scene));flush();
+  assert.equal(overlay.selection,null);
+  assert.equal(panel.selection,null);
+  assert.equal(scene.writes,writes);
 }));

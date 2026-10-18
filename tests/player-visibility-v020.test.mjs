@@ -170,7 +170,7 @@ test('GM publishing the grid and one shade writes only consented fields; changin
     assert.ok(button(panel.root,'Hide Coordinate Grid from Players'));
     assert.equal(button(panel.root,'Player Visible: Off').tag,'button');
     await button(panel.root,'Player Visible: Off').act('click');
-    const layers=find(panel.root,x=>x.tag==='details'&&x.children.some(c=>c.tag==='summary'&&c.textContent.startsWith('Shading layers')));
+    const layers=find(panel.root,x=>x.tag==='details'&&x.children.some(c=>c.tag==='summary'&&c.textContent.startsWith('Map Areas')));
     assert.ok(layers && layers.open,'visibility toggle does not collapse shading layers');
     assert.equal(data().formats.filter(x=>x.playerVisible===true).length,1);
     assert.equal(data().formats.filter(x=>x.playerVisible===false).length,1);

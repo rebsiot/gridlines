@@ -1,3 +1,23 @@
+# AFT Gridlines+ v0.1.11 — combined Map Areas and transient selection regression report
+
+**Date:** 2026-10-18. **Component:** G03 (`gridlines`) / AFT Gridlines+. **Verified source baseline:** v0.1.10, repository `rebsiot/gridlines` main commit `e76923f73b0b8b04fad274b911c7ac4633a5fead`, checked against the complete local v0.1.10 source. **Installed module and exact live Foundry build:** Unknown.
+
+**Implemented:** A read-only grouping of the existing `namedRanges` and `formats` arrays by identical normalized fine-cell bounds, shown in a single Map Areas accordion. Existing unequal or overlapping areas stay separate. Every saved name retains its ID through Rename; Remove Name is separately confirmed and deletes only that named-range record. A name-only area can receive GM-only shading; shading removal/configuration/player-visibility and native Region preview/conversion remain independent. No state schema change or migration.
+
+**Transient-selection fix:** `Stop Selecting Cells` and deactivating Foundry's Gridlines control clear the selected rectangle and panel state. Closing the manager clears selection plus any Locate flash; canvas teardown also clears transient selection. Added a visible Clear Selection button. None of these actions writes Scene flags or removes permanent shading, labels, named ranges, or Regions.
+
+**Automated/mock evidence:** `npm test` — **90 passed, 0 failed**. Includes the previous suite updated for the Map Areas presentation plus new tests of exact-boundary grouping, unmodified source flags, rename/duplicate checks, independent name removal, GM-only shading creation, accordion persistence, cancel-delete no-write, player data projection, stopping selection, manager close/reopen and canvas detach/reconnect. `node --check scripts/*.js tests/*.test.mjs` completed. ZIP integrity, manifest-at-root, no nested module folder, file equality and GitHub artifact checksum to be audited as part of release publication.
+
+**Confirmed live:** No v0.1.11 Foundry v14 or two-client test. This is an experimental alpha. No native Scene writes were performed on the user's installed server by this build process.
+
+**GM smoke test (pending):** Back up a disposable Foundry world and `Data/modules/gridlines`; update to 0.1.11 and hard-refresh. Create a saved name and shading covering the same cells; confirm one Map Areas row and Locate/Select. Rename the name, confirm its shading and Go To remain. Add a name to another shaded area, and Shade Area on a name-only location; confirm the new shade is GM Only. Cancel a Remove Name dialog before trying one in the test Scene. Select cells with left drag, Stop Selecting Cells, and confirm the blue rectangle disappears. Repeat after closing the manager and after switching Foundry tools/Scenes; right-drag should still pan. With a separate player client, confirm shared shading behavior and that no name labels appear. Native Regions should still be present and unchanged.
+
+**Upgrade:** Existing manifest `https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json`, same module ID. Preserve complete ZIP and Scene/world backup. No automatic Scene-data writes or migrations on install; edits continue to require GM actions. **Rollback:** Restore the prior v0.1.10 ZIP (kept under `dist` in GitHub) and reload clients. Code-only rollback cannot restore a name/shading that the GM explicitly deleted, nor remove native Regions created in any version; restore a matching world backup if needed.
+
+**Shared document synchronization:** G03 owner release record and historical inventory `103` need to reflect the verified 0.1.11 package and mock-only status. The Scene-flag data contract in `100` remains unchanged (`namedRanges` and `formats` arrays; optional visibility flags). Release procedure `101` unchanged; no adjacent module code contracts affected.
+
+---
+
 # AFT Gridlines+ v0.1.10 — GM/player sharing and label placement
 
 **Component:** G03 / module ID `gridlines`. **Working source:** verified GitHub commit `b35d1ff3de05897fabbff1ac1b6a25cc08942a78` (v0.1.9) and the matching local complete ZIP. **Installed Foundry v14 build:** not inspected; the latest live player experience remains unverified.

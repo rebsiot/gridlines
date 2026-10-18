@@ -2,7 +2,8 @@ import {parseRange, normalizeRange, formatRange, overlayResolver, squareResolver
 import {calibrateGuide, CALIBRATION_PRESETS} from "./calibration.js";
 import {geometrySnapshot, alignmentStatus, addFill, addNamedRange, normalizeAxes, validateAxes, overlayGeometryChanged,
   previewClearShading, clearShadingInSelection, clearShadingLayer, clearAllShading, updateShadingLayer,
-  setPlayerGridVisible, setShadingPlayerVisible} from "./model.js";
+  setPlayerGridVisible, setShadingPlayerVisible, renameNamedRange, removeNamedRange} from "./model.js";
+import {buildMapAreas} from "./areas.js";
 import {planShadingRegions, createShadingRegions, existingShadeRegionIds, MAX_REGION_BATCH} from "./region-bridge.js";
 import {NativeGridDisplay, copyFoundryGrid, planNativeGridMatch} from "./native-grid.js";
 
@@ -49,6 +50,10 @@ export class GridlinesPanel {
     this.nativeGrid = new NativeGridDisplay();
     this.nativePreview = null;
     this.shadingExpanded = true;
+    this.addingNameForAreaKey = null;
+    this.areaNameInput = "";
+    this.editingNameId = null;
+    this.editingNameDraft = "";
     this.editingShadeId = null;
     this.editingShadeDraft = null;
     this.regionPreview = null;
@@ -59,10 +64,13 @@ export class GridlinesPanel {
   open() { this.visible = true; this.render(); }
   close() {
     // A closed panel must never leave an invisible click-catching overlay active.
+    this.visible = false;
     this.overlay.setSelecting(false);
+    this.overlay.setSelection?.(null); // Stop lingering blue highlight from Locate/Select as well.
+    this.overlay.clearTemporaryHighlights?.();
+    this.selection = null;
     this.overlay.stopPlacement?.({cancel:true,quiet:true});
     this.overlay.stopCalibration?.();
-    this.visible = false;
     this.axesDraft = null;
     this.calibrationResult = null;
     this.draftSceneId = null;
@@ -72,6 +80,10 @@ export class GridlinesPanel {
     this.resetRegionPreview();
     this.editingShadeId = null;
     this.editingShadeDraft = null;
+    this.addingNameForAreaKey = null;
+    this.areaNameInput = "";
+    this.editingNameId = null;
+    this.editingNameDraft = "";
     this.root?.remove(); this.root = null;
   }
   toggle() { this.visible ? this.close() : this.open(); }
@@ -94,18 +106,20 @@ export class GridlinesPanel {
       throw new Error("Resolve native alignment and save or discard Grid Setup previews before editing shading or creating Regions");
     return state;
   }
-  async locateShading(layer) {
+  async locateArea(range, label = "") {
     const state=this.requireSavedGeometry();
-    if (!state.formats.some(f=>f.id===layer.id)) throw new Error("Shading layer no longer exists");
+    if (!buildMapAreas(state).some(area=>JSON.stringify(area.range)===JSON.stringify(normalizeRange(range.from,range.to))))
+      throw new Error("Map area no longer exists");
     const resolver=overlayResolver(canvas.grid,canvas.dimensions.sceneRect,state.axes);
-    const box=resolver.rangeBounds(layer.range),rect=canvas.dimensions.sceneRect;
+    const box=resolver.rangeBounds(range),rect=canvas.dimensions.sceneRect;
     const x0=Math.max(box.x,rect.x),x1=Math.min(box.right,rect.x+rect.width);
     const y0=Math.max(box.y,rect.y),y1=Math.min(box.bottom,rect.y+rect.height);
     if (x1<=x0||y1<=y0) throw new Error("Shading area is outside the visible Scene");
-    this.overlay.flashRange(layer.range);
+    this.overlay.flashRange(range);
     await canvas.animatePan({x:(x0+x1)/2,y:(y0+y1)/2,duration:350});
-    this.announce(`Located shading ${layer.label||""}`.trim());
+    this.announce(`Located area ${label}`.trim());
   }
+  async locateShading(layer) { return this.locateArea(layer.range,layer.label); }
   configureShading(layer) {
     this.requireSavedGeometry();
     this.shadingExpanded=true;
@@ -298,6 +312,19 @@ export class GridlinesPanel {
     throw new Error("Confirmation dialog unavailable; shading was not removed");
   }
 
+  async confirmNameRemoval(name) {
+    // A saved name might be used by Go To. Removing it should be an explicit
+    // decision, unlike clearing the temporary blue selection.
+    const clean = String(name).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    const message = `Remove the named map area '${name}'? The underlying shading, Scene and native Regions are unchanged. Restore a backup to recover a deleted name.`;
+    const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
+    if (typeof DialogV2?.confirm === "function")
+      return Boolean(await DialogV2.confirm({window:{title:"Remove Gridlines+ map name"},
+        content:`<p>Remove the name <strong>${clean}</strong>? Shading and Regions will remain unchanged.</p>`}));
+    if (typeof globalThis.window?.confirm === "function") return Boolean(globalThis.window.confirm(message));
+    throw new Error("Confirmation dialog unavailable; named area was not removed");
+  }
+
   render() {
     if (!this.visible || !game.user.isGM) return;
     if (!this.root) {
@@ -332,6 +359,7 @@ export class GridlinesPanel {
       this.draftSceneId=scene.id;this.overlay.setPreviewAxes(null);
       this.nativeGrid.restore(); this.nativePreview=null;
       this.editingShadeId=null;this.editingShadeDraft=null;this.resetRegionPreview();
+      this.addingNameForAreaKey=null;this.areaNameInput="";this.editingNameId=null;this.editingNameDraft="";
       this.shadingExpanded=true;
     }
     if (this.regionPreview && this.regionPreview.revision !== state.revision) this.resetRegionPreview();
@@ -678,7 +706,12 @@ export class GridlinesPanel {
     const visibleAddress = r => savedAxes.coordinateScope === "major"
       ? formatDisplayedRange(r,{col:savedAxes.majorEveryX,row:savedAxes.majorEveryY},{row:savedAxes.a1Row,col:savedAxes.a1Col},"numbers")
       : `cell:${formatRange(r)}`;
-    node("strong", selection, this.selection ? `Selected: ${visibleAddress(this.selection)}` : "No cells selected");
+    const selectedRow = node("div", selection, undefined, "gridlines-actions");
+    node("strong", selectedRow, this.selection ? `Selected: ${visibleAddress(this.selection)}` : "No cells selected");
+    button("Clear Selection", () => {
+      this.overlay.setSelection(null);
+      this.refresh();
+    }, selectedRow, {disabled: !this.selection, title:"Remove the temporary blue highlight without deleting shading or names"});
     node("p",selection,"Major mode selects the whole visible G14 block. Fine Subcells mode selects G14.3,4; saved records keep their original fine-cell indices.");
     const settings = node("div", root, undefined, "gridlines-actions");
     const color = field("Fill", "color", settings, this.inputs.color);
@@ -709,7 +742,7 @@ export class GridlinesPanel {
         clearShadingInSelection(current,selected,uid);
       });
       this.resetRegionPreview();
-      if (!this.service.read(scene).formats.length) this.shadingExpanded=false;
+      if (!buildMapAreas(this.service.read(scene)).length) this.shadingExpanded=false;
       this.announce(`Cleared shading in ${visibleAddress(selected)}; saved names remain intact`);
     }),shadeActions,{disabled:!this.selection||!state.formats.length});
     button(`Clear All Shading (${state.formats.length})`,()=>this.run(async()=>{
@@ -718,68 +751,160 @@ export class GridlinesPanel {
       if(!state.formats.length) return;
       if(!await this.confirmShadingClear(state.formats.length,"on this Scene")) return;
       await this.service.edit(scene,state.revision,current=>clearAllShading(current));
-      this.resetRegionPreview();this.shadingExpanded=false;
+      this.resetRegionPreview();if (!buildMapAreas(this.service.read(scene)).length) this.shadingExpanded=false;
       this.editingShadeId=null;this.editingShadeDraft=null;
       this.announce("All Gridlines+ shading cleared; named ranges were preserved");
     }),shadeActions,{disabled:!state.formats.length});
-    const layers = node("details",selection,undefined,"gridlines-section gridlines-shading-layers");
-    if (!state.formats.length) this.shadingExpanded=false;
-    layers.open=Boolean(state.formats.length && this.shadingExpanded);
-    layers.addEventListener("toggle",()=>{if(layers.isConnected!==false) this.shadingExpanded=Boolean(layers.open);});
-    node("summary",layers,`Shading layers (${state.formats.length}) — locate, select, configure, convert, or remove`);
-    const regionFound=existingShadeRegionIds(scene);
-    for(const layer of state.formats){
-      const item=node("div",layers,undefined,"gridlines-shading-row");
-      const top=node("div",item,undefined,"gridlines-shading-title");
-      const chip=node("span",top," ","gridlines-color-chip");
-      chip.style.backgroundColor=layer.fill;
-      node("span",top,`${layer.label ? `${layer.label} · ` : ""}${visibleAddress(layer.range)} · ${Math.round(layer.opacity*100)}% · ${layer.playerVisible === true ? "Player Visible" : "GM Only"}`);
-      const controls=node("div",item,undefined,"gridlines-actions gridlines-shading-buttons");
-      button("Locate",()=>this.run(()=>this.locateShading(layer)),controls,{title:"Pan to this shading and flash its outline without changing selection"});
-      button("Select",()=>this.run(async()=>{
+    // Named ranges and shading are two existing Scene-flag arrays, but one GM
+    // workflow. Group identical rectangles in the UI without migrating either.
+    const naming = node("div", selection, undefined, "gridlines-section");
+    node("strong", naming, "Name Selected Area");
+    const namingRow = node("div", naming, undefined, "gridlines-actions");
+    const name = node("input", namingRow); name.type = "text"; name.maxLength = 64;
+    name.placeholder = "Warehouse"; name.value = this.inputs.name;
+    name.setAttribute("aria-label", "Name selected cells");
+    name.addEventListener("input", () => { this.inputs.name = name.value; });
+    button("Save Name", () => this.run(async () => {
+      this.requireSavedGeometry();
+      const selected = this.validateRange(this.currentSelection());
+      await this.service.edit(scene, state.revision, current => addNamedRange(current, name.value, selected, uid()));
+      this.inputs.name = "";
+      this.shadingExpanded = true;
+      this.announce(`Saved ${name.value} at ${visibleAddress(selected)}`);
+    }), namingRow, {disabled: !this.selection});
+    node("small", naming, "Names and shading with exactly the same saved cell boundaries appear together below. Overlapping but different areas remain separate. No existing IDs are changed.");
+
+    const areas = buildMapAreas(state);
+    const layers = node("details", selection, undefined, "gridlines-section gridlines-shading-layers gridlines-map-areas");
+    if (!areas.length) this.shadingExpanded = false;
+    layers.open = Boolean(areas.length && this.shadingExpanded);
+    layers.addEventListener("toggle", () => { if (layers.isConnected !== false) this.shadingExpanded = Boolean(layers.open); });
+    node("summary", layers, `Map Areas (${areas.length}) — ${state.namedRanges.length} names, ${state.formats.length} shading layers`);
+    const regionFound = existingShadeRegionIds(scene);
+    if (!areas.length) node("p", layers, "No map areas yet. Select cells above, then name or shade them.");
+    for (const area of areas) {
+      const item = node("div", layers, undefined, "gridlines-shading-row gridlines-map-area-row");
+      const header = node("div", item, undefined, "gridlines-shading-title");
+      if (area.shadings.length) {
+        const chip = node("span", header, " ", "gridlines-color-chip");
+        chip.style.backgroundColor = area.shadings.at(-1).fill;
+      }
+      const areaTitle = [visibleAddress(area.range), ...area.names.map(n=>n.name)];
+      node("strong", header, areaTitle.join(" · "));
+      const areaControls = node("div", item, undefined, "gridlines-actions gridlines-shading-buttons");
+      button("Locate", () => this.run(() => this.locateArea(area.range, area.names.map(n=>n.name).join(", "))), areaControls,
+        {title:"Center the map and flash this complete named or shaded area"});
+      button("Select", () => this.run(async () => {
         this.requireSavedGeometry();
-        this.overlay.setSelection(layer.range);
-        this.announce(`Selected shading ${visibleAddress(layer.range)}`);
-      }),controls,{title:"Select exactly this saved shading extent for follow-up actions"});
-      button("Configure",()=>this.run(async()=>this.configureShading(layer)),controls);
-      button(layer.playerVisible === true ? "Player Visible: On" : "Player Visible: Off",()=>this.run(async()=>{
+        this.overlay.setSelection(area.range);
+        this.announce(`Selected ${visibleAddress(area.range)}`);
+      }), areaControls, {title:"Select this complete saved area. Clear Selection or close the manager when finished."});
+      button("Add Name", () => {
+        this.addingNameForAreaKey = area.key;
+        this.areaNameInput = "";
+        this.shadingExpanded = true;
+        this.refresh();
+      }, areaControls, {title:"Give this area a separate named-range alias without affecting its shading"});
+      if (!area.shadings.length) button("Shade Area", () => this.run(async () => {
         this.requireSavedGeometry();
-        const nextVisible=layer.playerVisible !== true;
-        await this.service.edit(scene,state.revision,current=>setShadingPlayerVisible(current,layer.id,nextVisible));
-        this.announce(nextVisible ? "Shading now visible to players" : "Shading hidden from players");
-      }),controls,{title:"Independently publish or hide only this shading layer. Existing layers start GM Only."});
-      button(regionFound.has(layer.id)?"Region exists":"To Region",()=>this.run(async()=>{
-        this.prepareRegionPreview([layer.id]);
-      }),controls,{disabled:regionFound.has(layer.id),title:"Preview one native Region using exact Gridlines+ pixel boundaries"});
-      button("Remove",()=>this.run(async()=>{
-        this.requireSavedGeometry();
-        await this.service.edit(scene,state.revision,current=>clearShadingLayer(current,layer.id));
-        this.resetRegionPreview();
-        if(this.editingShadeId===layer.id){this.editingShadeId=null;this.editingShadeDraft=null;}
-        if(!this.service.read(scene).formats.length)this.shadingExpanded=false;
-        this.announce(`Removed shading layer ${visibleAddress(layer.range)}; named ranges unchanged`);
-      }),controls);
-      if(this.editingShadeId===layer.id && this.editingShadeDraft){
-        const editor=node("div",item,undefined,"gridlines-shade-editor");
-        const label=field("Shading label (optional)","text",editor,this.editingShadeDraft.label);
-        label.maxLength=64;
-        label.addEventListener("input",()=>{this.editingShadeDraft.label=label.value;});
-        const style=node("div",editor,undefined,"gridlines-actions");
-        const fill=field("Shading fill", "color",style,this.editingShadeDraft.fill);
-        fill.addEventListener("input",()=>{this.editingShadeDraft.fill=fill.value;});
-        const opacity=field("Shading opacity %", "number",style,this.editingShadeDraft.opacity);
-        opacity.min="0";opacity.max="100";opacity.step="1";
-        opacity.addEventListener("input",()=>{this.editingShadeDraft.opacity=Number(opacity.value);});
-        const actions=node("div",editor,undefined,"gridlines-actions");
-        button("Save Shading",()=>this.run(async()=>{
+        await this.service.edit(scene, state.revision, current =>
+          addFill(current, area.range, this.inputs.color, Number(this.inputs.opacity) / 100, uid()));
+        this.shadingExpanded = true;
+        this.announce(`Shaded ${visibleAddress(area.range)}; names preserved`);
+      }), areaControls, {title:"Add a GM-only shading layer to this named area"});
+
+      if (this.addingNameForAreaKey === area.key) {
+        const editor = node("div", item, undefined, "gridlines-shade-editor");
+        const input = field("New name for this area", "text", editor, this.areaNameInput);
+        input.maxLength = 64;
+        input.addEventListener("input", () => { this.areaNameInput = input.value; });
+        const actions = node("div", editor, undefined, "gridlines-actions");
+        button("Save Area Name", () => this.run(async () => {
           this.requireSavedGeometry();
-          const draft={...this.editingShadeDraft};
-          await this.service.edit(scene,state.revision,current=>updateShadingLayer(current,layer.id,{label:draft.label,fill:draft.fill,opacity:Number(draft.opacity)/100}));
+          const value = this.areaNameInput;
+          await this.service.edit(scene, state.revision, current => addNamedRange(current, value, area.range, uid()));
+          this.addingNameForAreaKey = null;
+          this.areaNameInput = "";
+          this.announce(`Saved ${value} for ${visibleAddress(area.range)}`);
+        }), actions);
+        button("Cancel", () => { this.addingNameForAreaKey = null; this.areaNameInput = ""; this.refresh(); }, actions);
+      }
+
+      for (const named of area.names) {
+        const row = node("div", item, undefined, "gridlines-name-row gridlines-map-name-row");
+        node("span", row, `Name: ${named.name}`);
+        button("Rename", () => { this.editingNameId = named.id; this.editingNameDraft = named.name; this.refresh(); }, row);
+        button("Remove Name", () => this.run(async () => {
+          this.requireSavedGeometry();
+          if (!await this.confirmNameRemoval(named.name)) return;
+          await this.service.edit(scene, state.revision, current => removeNamedRange(current, named.id));
+          if (this.editingNameId === named.id) { this.editingNameId = null; this.editingNameDraft = ""; }
+          if (!buildMapAreas(this.service.read(scene)).length) this.shadingExpanded = false;
+          this.announce(`Removed name ${named.name}; shading and native Regions unchanged`);
+        }), row);
+        if (this.editingNameId === named.id) {
+          const edit = node("div", item, undefined, "gridlines-shade-editor");
+          const input = field("Rename map area", "text", edit, this.editingNameDraft);
+          input.maxLength = 64;
+          input.addEventListener("input", () => { this.editingNameDraft = input.value; });
+          const actions = node("div", edit, undefined, "gridlines-actions");
+          button("Save Rename", () => this.run(async () => {
+            this.requireSavedGeometry();
+            const nextName = this.editingNameDraft;
+            await this.service.edit(scene, state.revision, current => renameNamedRange(current, named.id, nextName));
+            this.editingNameId = null; this.editingNameDraft = "";
+            this.announce(`Renamed area to ${nextName}`);
+          }), actions);
+          button("Cancel Rename", () => { this.editingNameId = null; this.editingNameDraft = ""; this.refresh(); }, actions);
+        }
+      }
+
+      for (const layer of area.shadings) {
+        const shade = node("div", item, undefined, "gridlines-map-shading-row");
+        const heading = node("div", shade, undefined, "gridlines-shading-title");
+        const chip = node("span", heading, " ", "gridlines-color-chip"); chip.style.backgroundColor = layer.fill;
+        node("span", heading, `Shading: ${layer.label || "(no separate label)"} · ${Math.round(layer.opacity*100)}% · ${layer.playerVisible === true ? "Player Visible" : "GM Only"}`);
+        const controls = node("div", shade, undefined, "gridlines-actions gridlines-shading-buttons");
+        button("Configure", () => this.run(async () => this.configureShading(layer)), controls);
+        button(layer.playerVisible === true ? "Player Visible: On" : "Player Visible: Off", () => this.run(async () => {
+          this.requireSavedGeometry();
+          const nextVisible = layer.playerVisible !== true;
+          await this.service.edit(scene, state.revision, current => setShadingPlayerVisible(current, layer.id, nextVisible));
+          this.announce(nextVisible ? "Shading now visible to players" : "Shading hidden from players");
+        }), controls, {title:"Only this shading is shared. Names remain GM-only."});
+        button(regionFound.has(layer.id) ? "Region exists" : "To Region", () => this.run(async () => {
+          this.prepareRegionPreview([layer.id]);
+        }), controls, {disabled:regionFound.has(layer.id), title:"Preview a native Foundry Region at the exact shading boundaries"});
+        button("Remove Shading", () => this.run(async () => {
+          this.requireSavedGeometry();
+          await this.service.edit(scene, state.revision, current => clearShadingLayer(current, layer.id));
           this.resetRegionPreview();
-          this.editingShadeId=null;this.editingShadeDraft=null;
-          this.announce(`Updated shading ${visibleAddress(layer.range)}`);
-        }),actions);
-        button("Cancel Shading Edit",()=>{this.editingShadeId=null;this.editingShadeDraft=null;this.refresh();},actions);
+          if (this.editingShadeId === layer.id) { this.editingShadeId = null; this.editingShadeDraft = null; }
+          if (!buildMapAreas(this.service.read(scene)).length) this.shadingExpanded = false;
+          this.announce(`Removed shading ${visibleAddress(layer.range)}; names unchanged`);
+        }), controls);
+        if (this.editingShadeId === layer.id && this.editingShadeDraft) {
+          const editor = node("div", shade, undefined, "gridlines-shade-editor");
+          const label = field("Shading label (optional)", "text", editor, this.editingShadeDraft.label);
+          label.maxLength = 64;
+          label.addEventListener("input", () => { this.editingShadeDraft.label = label.value; });
+          const style = node("div", editor, undefined, "gridlines-actions");
+          const fill = field("Shading fill", "color", style, this.editingShadeDraft.fill);
+          fill.addEventListener("input", () => { this.editingShadeDraft.fill = fill.value; });
+          const opacity = field("Shading opacity %", "number", style, this.editingShadeDraft.opacity);
+          opacity.min = "0"; opacity.max = "100"; opacity.step = "1";
+          opacity.addEventListener("input", () => { this.editingShadeDraft.opacity = Number(opacity.value); });
+          const actions = node("div", editor, undefined, "gridlines-actions");
+          button("Save Shading", () => this.run(async () => {
+            this.requireSavedGeometry();
+            const draft = {...this.editingShadeDraft};
+            await this.service.edit(scene, state.revision, current => updateShadingLayer(current, layer.id,
+              {label:draft.label, fill:draft.fill, opacity:Number(draft.opacity)/100}));
+            this.resetRegionPreview(); this.editingShadeId = null; this.editingShadeDraft = null;
+            this.announce(`Updated shading ${visibleAddress(layer.range)}`);
+          }), actions);
+          button("Cancel Shading Edit", () => { this.editingShadeId = null; this.editingShadeDraft = null; this.refresh(); }, actions);
+        }
       }
     }
     if(state.formats.length){
@@ -809,27 +934,6 @@ export class GridlinesPanel {
         button(`Create ${this.regionPreview.items.length} Region${this.regionPreview.items.length===1?"":"s"}`,()=>this.run(()=>this.confirmRegionCreation()),actions);
         button("Cancel Region Preview",()=>{this.resetRegionPreview();this.refresh();},actions);
       }
-    }
-    const names = node("div", root, undefined, "gridlines-section");
-    node("strong", names, "Named Ranges (visible coordinates)");
-    const naming = node("div", names, undefined, "gridlines-actions");
-    const name = node("input", naming); name.type = "text"; name.maxLength = 64; name.placeholder = "Warehouse"; name.value = this.inputs.name;
-    name.setAttribute("aria-label", "Name selected cells");
-    name.addEventListener("input", () => { this.inputs.name = name.value; });
-    button("Save Name", () => this.run(async () => {
-      if (this.overlay.geometryPreviewPending || this.overlay.calibrating || this.overlay.placementMode)
-        throw new Error("Save or discard the grid calibration preview before naming cells");
-      const selected = this.validateRange(this.currentSelection());
-      await this.service.edit(scene, state.revision, current => addNamedRange(current, name.value, selected, uid()));
-      this.inputs.name = "";
-      this.announce(`Saved ${name.value} at ${visibleAddress(selected)}`);
-    }), naming, {disabled: !this.selection});
-    if (!state.namedRanges.length) node("p", names, "No saved ranges yet.");
-    for (const range of state.namedRanges) {
-      const item = node("div", names, undefined, "gridlines-name-row");
-      const label = node("span", item);
-      label.textContent = `${range.name} · ${visibleAddress(range.range)}`;
-      button("Go", () => this.run(() => this.go(range.name)), item);
     }
     const footer = node("small", root, "GM authoring; optional player-visible grid and individually published shading. Scene flags are readable data, not secure GM notes. No automation or camera broadcast.", "gridlines-footer");
     if (this.statusText) { const note = node("small", root, this.statusText); note.className = "gridlines-status"; }

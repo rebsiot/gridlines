@@ -121,6 +121,12 @@
 .gridlines-panel .gridlines-shading-buttons { gap:4px; }
 .gridlines-panel .gridlines-shading-buttons button { font-size:11px; min-height:25px; padding:3px 6px; }
 .gridlines-panel .gridlines-shade-editor { margin:8px 0; padding:8px; border:1px solid rgba(170,200,220,.35); border-radius:4px; }
+.gridlines-panel .gridlines-map-area-row > .gridlines-shading-title { margin-bottom: 5px; }
+.gridlines-panel .gridlines-map-area-row > .gridlines-shading-title strong { overflow-wrap: anywhere; }
+.gridlines-panel .gridlines-map-name-row { padding: 5px 4px 5px 10px; border-left: 2px solid rgba(140,190,255,.4); gap: 5px; }
+.gridlines-panel .gridlines-map-name-row button { font-size: 11px; padding: 3px 6px; min-height: 25px; }
+.gridlines-panel .gridlines-map-shading-row { margin: 7px 0 2px 8px; padding: 7px 0 5px 9px; border-left: 2px solid rgba(251,191,36,.45); }
+.gridlines-panel .gridlines-map-shading-row .gridlines-shading-title { margin-bottom: 3px; }
 .gridlines-panel .gridlines-region-preview-box { margin:10px 0; padding:9px; border:1px solid #c084fc; border-radius:4px; }
 .gridlines-panel .gridlines-region-preview-box small { overflow-wrap:anywhere; }
 .gridlines-locate-highlight, .gridlines-region-preview { pointer-events:none; }

@@ -127,6 +127,11 @@ export class GridlinesOverlay {
     this.locateTimer=null;
     this.locatedRange=null;
     this.regionPreviewRanges=[];
+    // A selection is temporary authoring feedback, never persistent Scene data.
+    // In particular a canvas teardown must not leave a selection for the next Scene.
+    this.selection = null;
+    this.selecting = false;
+    this.onSelection(null);
     this.root?.remove();
     this.root = null;
     this.svg = null;
@@ -157,7 +162,12 @@ export class GridlinesOverlay {
     if (active && this.calibrating) this.stopCalibration();
     if (active && this.placementMode) this.stopPlacement({cancel: true});
     this.selecting = Boolean(active);
-    if (!this.selecting) this.dragStart = null;
+    if (!this.selecting) {
+      this.dragStart = null;
+      // Deactivating Select Cells (or switching Foundry's left controls) clears
+      // the blue selection immediately, not merely the click capture.
+      if (this.selection !== null) this.setSelection(null);
+    }
     this.syncInteraction();
     this.schedule();
   }
@@ -247,6 +257,13 @@ export class GridlinesOverlay {
     this.schedule();
     this.locateTimer = setTimeout(()=>{this.locatedRange=null;this.locateTimer=null;this.schedule();},duration);
     this.locateTimer.unref?.();
+  }
+  clearTemporaryHighlights() {
+    this.setSelection(null);
+    if (this.locateTimer) clearTimeout(this.locateTimer);
+    this.locateTimer = null;
+    this.locatedRange = null;
+    this.schedule();
   }
   setRegionPreview(ranges) {
     this.regionPreviewRanges = (ranges ?? []).map(r=>normalizeRange(r.from,r.to));

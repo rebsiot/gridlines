@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.11 — 2026-10-18 (Experimental alpha — combined Map Areas and selection cleanup)
+
+- **One Map Areas list:** Replaces the separate Shading Layers and Named Ranges lists with **Map Areas (names + shading)**. Existing named ranges and shading with exactly matching fine-cell boundaries appear as a single area. Different or partially overlapping extents remain separate; there is no automated merge, migration or deletion of saved records.
+- **Actions in context:** Each area can **Locate**, **Select** or **Add Name**. A name-only area can **Shade Area** without first reselecting cells. Saved names have **Rename** and separately confirmed **Remove Name** actions; shading retains **Configure**, **Player Visible**, **To Region**, and **Remove Shading** controls. Saved named-range IDs survive rename; deleting a name does not delete its shading, and deleting shading does not delete names or native Regions.
+- **Map Areas stays expanded** after actions until manually collapsed or until the last named or shaded area is removed. Previous persistent scroll behavior remains.
+- **Deselect fixes:** **Clear Selection** removes the temporary blue rectangle without affecting saved data. **Stop Selecting Cells**, switching away from the Foundry Gridlines control, closing the manager and canvas/Scene teardown all clear transient selection; manager close also cancels temporary Locate flashes. The map's permanent guide grid, stored shading, names and native Region objects remain unchanged.
+- **Unchanged contracts:** Module ID `gridlines`, `flags.gridlines.state` schema 1, named-range IDs, shading IDs and player-visible flags, saved cell extents, Foundry native grid settings, native Region provenance IDs, project manifest URL, GM-only editing and read-only player overlays. Named-range entries remain GM-only in the projected player view; Scene flags must still not contain GM secrets.
+- **Testing:** 90 local Node automated/mock tests passed, JS syntax checked and installable ZIP audited. Live Foundry v14 GM/player verification remains pending. Back up the world before destructive name/shade changes; code rollback cannot undo explicit saved deletions. The v0.1.10 ZIP remains available.
+
 ## 0.1.10 — 2026-10-18 (Experimental alpha — GM-controlled player overlays and label placement)
 
 - **Share Gridlines+ with players:** New per-Scene **Show/Hide Coordinate Grid to/from Players** control. Off by default for all existing and newly enabled Scenes. Players render only a read-only, non-interactive coordinate SVG with the saved axis spacing, colors and labels. They get no module edit/selection controls.

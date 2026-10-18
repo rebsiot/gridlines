@@ -2,8 +2,8 @@
   "id": "gridlines",
   "type": "module",
   "title": "AFT Gridlines+",
-  "description": "AFT Gridlines+ experimental Foundry v14 alpha: GM-controlled player-visible coordinate grid and individual shading, configurable label placement, rectangular alignment and optional Region conversion.",
-  "version": "0.1.10",
+  "description": "AFT Gridlines+ experimental Foundry v14 alpha: unified Map Areas for names and shading; clearable temporary cell selection, player-visible grid/shading, coordinate labels and optional native Region conversion.",
+  "version": "0.1.11",
   "authors": [
     {
       "name": "AFT (Advanced Features & Tools)"
@@ -20,7 +20,7 @@
   ],
   "url": "https://github.com/rebsiot/gridlines",
   "manifest": "https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json",
-  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.10-alpha.zip",
+  "download": "https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.11-alpha.zip",
   "readme": "README.md",
   "changelog": "CHANGELOG.md",
   "bugs": "https://github.com/rebsiot/gridlines/issues"

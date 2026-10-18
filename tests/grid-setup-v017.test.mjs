@@ -226,8 +226,8 @@ test('shading can be cleared by selection, individually, or entirely while prese
   const after=service.read(scene);
   assert.equal(after.formats.length,8);
   assert.equal(after.namedRanges.length,1);
-  assert.ok(all(panel.root,e=>e.textContent.includes('Warehouse · A1')).length);
-  await press(panel.root,'Remove');
+  assert.ok(all(panel.root,e=>e.textContent.includes('A1 · Warehouse')).length);
+  await press(panel.root,'Remove Shading');
   assert.equal(service.read(scene).formats.length,7,'single layer removal affects one layer');
   await press(panel.root,'Clear All Shading (7)');
   assert.equal(dialog.length,2,'bulk removal requires confirmation');
