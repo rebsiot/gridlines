@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.12 — 2026-10-18 (Experimental alpha — movable manager and UI cleanup)
+
+- **Movable and resizable window:** Added a dedicated title bar that supports left-pointer dragging, plus a visible lower-right grip for independent width/height resizing. Reset repositions and resizes the panel to a safe default; viewport clamping prevents the title bar or close button from becoming inaccessible after a screen-size change. Arrow-key movement and resizing work when their handles are focused.
+- **Compact workspaces:** Three tabs replace the long always-expanded control list: **Map** (Go To, selection, local grid visibility, player sharing), **Map Areas** (naming/shading, Locate, Configure, sharing, Region conversion) and **Grid Setup** (alignment, cell geometry, axes, colors and labels). Grid Setup's matching, drag/A1, calibration, and font controls are grouped into independent collapsible sections; their expanded states and tab positions persist through normal manager refreshes. The Save/Discard controls stay visible while scrolling setup.
+- **Layout continuity:** The window keeps its GM-local position/size in browser localStorage under `gridlines.manager.layout.v1`. No layout preference is stored in Foundry Scene flags, and no migration occurs. Existing floating-panel content, saved Scene data and world objects are not rewritten; closing the manager still clears temporary selection and previews.
+- **Test evidence:** 93 automated/mock tests pass, including pointer movement/resizing, viewport recovery, tab visibility and refresh behavior. Browser-rendered visual mock and real pointer gestures checked; **not** a live Foundry v14/world test. The v0.1.11 ZIP remains for rollback.
+
+
 ## 0.1.11 — 2026-10-18 (Experimental alpha — combined Map Areas and selection cleanup)
 
 - **One Map Areas list:** Replaces the separate Shading Layers and Named Ranges lists with **Map Areas (names + shading)**. Existing named ranges and shading with exactly matching fine-cell boundaries appear as a single area. Different or partially overlapping extents remain separate; there is no automated merge, migration or deletion of saved records.

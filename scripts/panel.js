@@ -6,6 +6,7 @@ import {geometrySnapshot, alignmentStatus, addFill, addNamedRange, normalizeAxes
 import {buildMapAreas} from "./areas.js";
 import {planShadingRegions, createShadingRegions, existingShadeRegionIds, MAX_REGION_BATCH} from "./region-bridge.js";
 import {NativeGridDisplay, copyFoundryGrid, planNativeGridMatch} from "./native-grid.js";
+import {GridlinesWindowLayout} from "./window-layout.js";
 
 const uid = () => globalThis.crypto?.randomUUID?.() ?? foundry.utils.randomID();
 
@@ -58,6 +59,35 @@ export class GridlinesPanel {
     this.editingShadeDraft = null;
     this.regionPreview = null;
     this.regionBackupAcknowledged = false;
+    this.windowLayout = new GridlinesWindowLayout();
+    this.activeTab = "map";
+    this.tabScroll = {map: 0, areas: 0, setup: 0};
+    this.tabButtons = {};
+    this.tabPanels = {};
+    this.contentRoot = null;
+    // These are personal UI preferences, not additional saved Scene data.
+    this.setupExpanded = {matching: false, placement: true, calibration: false, fonts: false};
+  }
+
+  setTab(tab) {
+    if (!Object.hasOwn(this.tabScroll, tab)) return;
+    if (this.contentRoot) this.tabScroll[this.activeTab] = this.contentRoot.scrollTop ?? 0;
+    this.activeTab = tab;
+    for (const [name, panel] of Object.entries(this.tabPanels)) {
+      panel.hidden = name !== tab;
+      this.tabButtons[name]?.setAttribute("aria-selected", String(name === tab));
+    }
+    if (this.contentRoot) this.contentRoot.scrollTop = this.tabScroll[tab] ?? 0;
+  }
+
+  setupGroup(parent, title, name) {
+    const details = node("details", parent, undefined, "gridlines-setup-group");
+    details.open = Boolean(this.setupExpanded[name]);
+    details.addEventListener("toggle", () => {
+      if (details.isConnected !== false) this.setupExpanded[name] = details.open;
+    });
+    node("summary", details, title);
+    return details;
   }
 
   get scene() { return canvas.ready ? canvas.scene : null; }
@@ -84,6 +114,10 @@ export class GridlinesPanel {
     this.areaNameInput = "";
     this.editingNameId = null;
     this.editingNameDraft = "";
+    this.windowLayout.unmount();
+    this.contentRoot = null;
+    this.tabButtons = {};
+    this.tabPanels = {};
     this.root?.remove(); this.root = null;
   }
   toggle() { this.visible ? this.close() : this.open(); }
@@ -329,27 +363,57 @@ export class GridlinesPanel {
     if (!this.visible || !game.user.isGM) return;
     if (!this.root) {
       this.root = node("section", document.body, undefined, "gridlines-panel");
-      this.root.setAttribute("role", "region");
+      this.root.setAttribute("role", "dialog");
       this.root.setAttribute("aria-label", "AFT Gridlines+ manager");
+      this.windowLayout.mount(this.root);
     }
     const root = this.root;
     const priorScroll = root.scrollTop;
+    if (this.contentRoot) this.tabScroll[this.activeTab] = this.contentRoot.scrollTop ?? 0;
     root.replaceChildren();
-    const header = node("div", root, undefined, "gridlines-panel-header");
-    node("strong", header, "AFT Gridlines+");
-    button("×", () => this.close(), header, {title: "Close AFT Gridlines+ manager"});
+    const header = node("header", root, undefined, "gridlines-panel-header");
+    const dragArea = node("div", header, undefined, "gridlines-drag-title");
+    dragArea.setAttribute("aria-label", "Drag Gridlines+ window");
+    dragArea.setAttribute("title", "Drag to move the window. Arrow keys move it when focused.");
+    dragArea.tabIndex = 0;
+    dragArea.addEventListener("pointerdown", event => this.windowLayout.begin(event, "move"));
+    dragArea.addEventListener("keydown", event => {
+      const direction = {ArrowLeft: [-20, 0], ArrowRight: [20, 0], ArrowUp: [0, -20], ArrowDown: [0, 20]}[event.key];
+      if (direction) {event.preventDefault?.(); this.windowLayout.nudge(...direction);}
+    });
+    node("strong", dragArea, "AFT Gridlines+");
+    node("span", dragArea, "Drag to move · Resize at bottom-right", "gridlines-window-hint");
+    const headerActions = node("div", header, undefined, "gridlines-header-actions");
+    button("Reset", () => this.windowLayout.reset(), headerActions, {title: "Reset window size and position"});
+    button("×", () => this.close(), headerActions, {title: "Close Gridlines+ manager"});
+    const tabs = node("nav", root, undefined, "gridlines-panel-tabs");
+    tabs.hidden = true;
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "Gridlines+ manager sections");
+    const main = node("div", root, undefined, "gridlines-panel-content");
+    this.contentRoot = main;
+    const grip = node("div", root, "◢", "gridlines-resize-grip");
+    grip.title = "Drag to resize Gridlines+ window";
+    grip.setAttribute("role", "separator");
+    grip.setAttribute("aria-label", "Resize Gridlines+ window");
+    grip.tabIndex = 0;
+    grip.addEventListener("pointerdown", event => this.windowLayout.begin(event, "resize"));
+    grip.addEventListener("keydown", event => {
+      const delta = {ArrowLeft: [-20, 0], ArrowRight: [20, 0], ArrowUp: [0, -20], ArrowDown: [0, 20]}[event.key];
+      if (delta) {event.preventDefault?.(); this.windowLayout.nudge(...delta, "resize");}
+    });
     const scene = this.scene;
-    if (!scene) { node("p", root, "Open a Scene to use Gridlines."); return; }
-    if (!canvas.grid?.isSquare) { node("p", root, "This build requires a native Foundry square-grid Scene, although the Gridlines visual overlay can use rectangular cells. No Scene data was changed."); return; }
+    if (!scene) { node("p", main, "Open a Scene to use Gridlines+."); return; }
+    if (!canvas.grid?.isSquare) { node("p", main, "This build needs a Foundry square-grid Scene, though Gridlines+ can draw rectangular cells. No Scene data changed."); return; }
     let state, snapshot;
     try { state = this.service.read(scene); snapshot = geometrySnapshot(scene); }
-    catch (error) { node("p", root, `Cannot read Scene data: ${error.message}`); return; }
+    catch (error) { node("p", main, `Cannot read Scene data: ${error.message}`); return; }
     if (!state) {
-      node("p", root, "Start on a test Scene. This enables the grid overlay without changing Foundry's grid, Tokens, Drawings, Tiles, or Regions.");
+      node("p", main, "Enable the coordinate overlay on this Scene. Foundry's grid and map objects will not change.");
       button("Enable on this Scene", () => this.run(async () => {
         await this.service.enable(scene);
         this.announce("Gridlines enabled for this Scene");
-      }), root);
+      }), main);
       return;
     }
     const pending = alignmentStatus(state, snapshot).pending;
@@ -361,10 +425,12 @@ export class GridlinesPanel {
       this.editingShadeId=null;this.editingShadeDraft=null;this.resetRegionPreview();
       this.addingNameForAreaKey=null;this.areaNameInput="";this.editingNameId=null;this.editingNameDraft="";
       this.shadingExpanded=true;
+      this.activeTab = "map";
+      this.tabScroll = {map: 0, areas: 0, setup: 0};
     }
     if (this.regionPreview && this.regionPreview.revision !== state.revision) this.resetRegionPreview();
     if (pending) {
-      const warning = node("div", root, undefined, "gridlines-warning");
+      const warning = node("div", main, undefined, "gridlines-warning");
       node("strong", warning, "Foundry grid alignment changed");
       node("p", warning, `Approved: ${state.baseline.size}px · Current: ${snapshot.size}px. Saved locations and fills are preserved. Editing and navigation are paused until you review the change.`);
       const backupCheck = node("label", warning, undefined, "gridlines-check");
@@ -395,15 +461,40 @@ export class GridlinesPanel {
           this.announce("Gridlines formatting and ranges were remapped to approximate their previous image positions");
         }), note);
       }
-      node("small", root, "This tool never alters Foundry's native grid size or moves existing map objects.");
+      node("small", main, "Review the change before modifying any saved map locations.");
       return;
     }
     this.preservePreview = null;
     if (!this.axesDraft) this.axesDraft = normalizeAxes(state.axes);
     const savedAxes = normalizeAxes(state.axes);
     const draft = this.axesDraft;
-    const visibility = node("div", root, undefined, "gridlines-section");
-    node("strong", visibility, "Grid visibility (your screen only)");
+    // Only one functional workspace is shown at a time. Build every tab on
+    // refresh so its controls are always current and preserve existing actions.
+    tabs.hidden = false;
+    const workspace = node("div", main, undefined, "gridlines-workspace");
+    this.tabButtons = {};
+    this.tabPanels = {};
+    const areaCount = buildMapAreas(state).length;
+    for (const [key, title] of [["map", "Map"], ["areas", `Map Areas (${areaCount})`], ["setup", "Grid Setup"]]) {
+      const action = button(title, () => this.setTab(key), tabs);
+      action.className = "gridlines-tab";
+      action.setAttribute("role", "tab");
+      action.setAttribute("aria-controls", `gridlines-pane-${key}`);
+      action.setAttribute("aria-selected", String(key === this.activeTab));
+      this.tabButtons[key] = action;
+      const pane = node("section", workspace, undefined, "gridlines-tab-pane");
+      pane.setAttribute("role", "tabpanel");
+      pane.id = `gridlines-pane-${key}`;
+      pane.hidden = key !== this.activeTab;
+      this.tabPanels[key] = pane;
+    }
+    const mapPane = this.tabPanels.map;
+    const areasPane = this.tabPanels.areas;
+    const setupPane = this.tabPanels.setup;
+    const nav = node("div", mapPane, undefined, "gridlines-section gridlines-nav-section");
+    const selectionTools = node("div", mapPane, undefined, "gridlines-section gridlines-selection-tools");
+    const visibility = node("div", mapPane, undefined, "gridlines-section");
+    node("strong", visibility, "Grid visibility · this screen");
     const visibilityRow = node("div", visibility, undefined, "gridlines-actions");
     button(this.nativeGrid.isVisible ? "Hide Foundry Grid" : "Show Foundry Grid", () => this.run(() => {
       this.nativeGrid.setVisible(!this.nativeGrid.isVisible);
@@ -411,11 +502,11 @@ export class GridlinesPanel {
     button(this.overlay.localVisible ? "Hide Gridlines+" : "Show Gridlines+", () => this.run(() => {
       this.overlay.setVisible(!this.overlay.localVisible);
     }), visibilityRow);
-    node("small", visibility, "Hiding Foundry grid is temporary and affects only this GM's browser. Token snapping still uses Foundry's grid. Closing the manager restores native grid visibility.");
+    node("small", visibility, "Local preview only. Foundry snapping still works; closing the manager restores its grid.");
 
-    const sharing = node("div", root, undefined, "gridlines-section gridlines-player-sharing");
+    const sharing = node("div", mapPane, undefined, "gridlines-section gridlines-player-sharing");
     node("strong", sharing, "Player visibility (GM-controlled)");
-    node("p", sharing, "Share the Gridlines+ coordinate grid with players in this Scene. Every shading layer has an independent Player Visible toggle in Shading Layers below; old and new layers are GM Only until shared. Neither setting changes Foundry's native movement grid.");
+    node("p", sharing, "Share the coordinate grid with players. Use Map Areas to publish individual shaded locations; others remain GM-only.");
     const sharingActions = node("div", sharing, undefined, "gridlines-actions");
     const playerGridOn = state.playerGridVisible === true;
     button(playerGridOn ? "Hide Coordinate Grid from Players" : "Show Coordinate Grid to Players", () => this.run(async () => {
@@ -423,14 +514,12 @@ export class GridlinesPanel {
       this.announce(playerGridOn ? "Coordinate grid hidden from players" : "Coordinate grid shown to players on this Scene");
     }), sharingActions);
     node("small", sharing, `Player coordinate grid: ${playerGridOn ? "VISIBLE" : "HIDDEN"}. Player-visible shading: ${state.formats.filter(f => f.playerVisible === true).length} of ${state.formats.length}. Existing layers stay hidden until explicitly shared.`);
-    node("small", sharing, "Important: This SVG overlay is not masked by Foundry fog or token vision. Do not publish secret markings. Scene flags, including named-range names, are not private storage; this module does not display named ranges to players.");
+    node("small", sharing, "Not masked by fog/vision. Avoid sharing secrets; Scene flags are not secret storage.");
 
-    const options = node("details", root, undefined, "gridlines-section");
-    options.open = true;
-    node("summary", options, "Grid Setup — live preview");
-    node("p", options, "Overlay settings preview immediately. Two explicit Match controls below copy between the overlay and Foundry's native grid; native changes always require backup and confirmation.");
-    const matching = node("div", options, undefined, "gridlines-calibration-controls");
-    node("strong", matching, "Match Foundry and Gridlines+ grids");
+    const options = node("section", setupPane, undefined, "gridlines-section gridlines-setup-content");
+    node("h3", options, "Grid Setup · live preview");
+    node("p", options, "Align the visual grid to the map, then Save. Changes are previews until saved.");
+    const matching = this.setupGroup(options, "Match Foundry and Gridlines+", "matching");
     const matchActions = node("div", matching, undefined, "gridlines-actions");
     button("Match Gridlines+ to Foundry", () => this.run(() => {
       const next = validateAxes(copyFoundryGrid(normalizeAxes(this.axesDraft ?? state.axes)));
@@ -470,9 +559,8 @@ export class GridlinesPanel {
       button("Cancel Native Preview",()=>{this.nativePreview=null;this.refresh();},review);
     }
     node("small", matching, "Foundry's native grid requires square cells and does not support independent overlay X/Y offsets. The reverse-match action refuses incompatible geometry rather than shifting the map artwork. For those maps, keep the Gridlines+ overlay or use Foundry's native Grid Configuration tool.");
-    const placement=node("div",options,undefined,"gridlines-calibration-controls");
-    node("strong",placement,"Drag grid / Choose A1");
-    node("p",placement,"Drag the whole grid directly over the map to align it. Release to preview. Then, if needed, choose Pick A1 and click the cell where major-block coordinate A1 should begin. Neither step writes to the Scene until Save Grid Setup.");
+    const placement=this.setupGroup(options, "Align grid and choose A1", "placement");
+    node("p",placement,"Drag to align the overlay. Pick A1 to move the coordinate origin. Save Grid Setup commits the preview.");
     const placementButtons=node("div",placement,undefined,"gridlines-actions");
     button("Drag Grid",()=>this.run(()=>{
       if (!this.overlay.root) this.overlay.attach();
@@ -498,9 +586,8 @@ export class GridlinesPanel {
       },placementButtons);
     }
     node("small",placement,`Current A1 anchor: fine cell column ${draft.a1Col+1}, row ${draft.a1Row+1}. A1 numbering changes; existing saved fine-cell indices do not.`);
-    const calibration = node("div", options, undefined, "gridlines-calibration-controls");
-    node("strong", calibration, "Draw to align a printed map grid");
-    node("p", calibration, "Choose 10x10, 5x5, or 1x1. Draw a horizontal/vertical guide to measure one dimension, or drag corner-to-corner across a printed block to measure both width and height, even if the cells are rectangular. Release to preview; nothing is saved until Save Grid Setup.");
+    const calibration = this.setupGroup(options, "Draw 10×10, 5×5 or 1×1 calibration guide", "calibration");
+    node("p", calibration, "Draw a straight guide to measure one dimension, or corner-to-corner to measure width and height. The preview is not saved automatically.");
     const guideButtons = node("div", calibration, undefined, "gridlines-actions");
     for (const n of CALIBRATION_PRESETS) {
       button(`Draw ${n}x${n} Guide`, () => this.run(() => {
@@ -521,7 +608,8 @@ export class GridlinesPanel {
       const measured = this.calibrationResult;
       node("p",calibration, `Preview: ${this.axesDraft.cellWidth ?? canvas.grid.sizeX}px wide × ${this.axesDraft.cellHeight ?? canvas.grid.sizeY}px tall (${measured.mode}). Offsets: X ${this.axesDraft.offsetX}px / Y ${this.axesDraft.offsetY}px. Not saved yet.`);
     }
-    const settingsFields = node("div", options, undefined, "gridlines-actions");
+    node("h4", options, "Cell geometry and major axes");
+    const settingsFields = node("div", options, undefined, "gridlines-actions gridlines-fields-grid");
     const width = field("Cell width (px; blank = Foundry)", "number", settingsFields, draft.cellWidth == null ? "" : String(draft.cellWidth));
     const height = field("Cell height (px; blank = Foundry)", "number", settingsFields, draft.cellHeight == null ? "" : String(draft.cellHeight));
     for(const ctl of [width,height]) {ctl.min="10";ctl.max="2000";ctl.step=".1";}
@@ -552,8 +640,7 @@ export class GridlinesPanel {
     const lineColor=field("Gridline color", "color", settingsFields, draft.color);
     const lineAlpha=field("Gridline opacity %", "number", settingsFields, String(Math.round(draft.alpha*100)));
     lineAlpha.min="0";lineAlpha.max="100";lineAlpha.step="1";
-    const labelSettings = node("div",options,undefined,"gridlines-calibration-controls");
-    node("strong",labelSettings,"Coordinate label fonts (live preview)");
+    const labelSettings = this.setupGroup(options, "Coordinate label fonts and placement", "fonts");
     const fontFields = node("div",labelSettings,undefined,"gridlines-actions");
     const colLabelSize = field("Column letter size (px)","number",fontFields,String(draft.colLabelSize));
     const rowLabelSize = field("Row number size (px)","number",fontFields,String(draft.rowLabelSize));
@@ -640,7 +727,7 @@ export class GridlinesPanel {
     const backupRow=node("label",options,undefined,"gridlines-check");
     const backup=node("input",backupRow);backup.type="checkbox";
     node("span",backupRow,"I have a recoverable backup and approve moving existing overlay locations if geometry changes");
-    const actions=node("div",options,undefined,"gridlines-actions");
+    const actions=node("div",options,undefined,"gridlines-actions gridlines-setup-save");
     button("Save Grid Setup",()=>this.run(async()=>{
       const next=validateAxes(value());
       if(locationAffected() && (state.formats.length || state.namedRanges.length) && !backup.checked)
@@ -673,13 +760,14 @@ export class GridlinesPanel {
     node("small",options,`Foundry movement grid: ${canvas.grid.sizeX}×${canvas.grid.sizeY}px. Gridlines+ columns: ${draft.majorEveryX} fine cells / ${draft.minorDivisionsX} minor divisions; rows: ${draft.majorEveryY} fine cells / ${draft.minorDivisionsY} minor divisions. Underlying saved fine-cell indices never change when adjusting display labels.`);
     if (savedAxes.coordinateScope === "cell") node("p",options,"This is a legacy Scene showing A, K, U and 1, 11, 21. Choose Major blocks under Axis coordinate numbering, then Save Grid Setup, to show A, B, C and 1, 2, 3 instead.");
 
-    const selectionTools = node("div", root, undefined, "gridlines-section gridlines-actions");
+    const selectionToolsActions = node("div", selectionTools, undefined, "gridlines-actions");
+    node("strong", selectionTools, "Cell selection");
     button(this.overlay.selecting ? "Stop Selecting Cells" : "Select Cells on Map", () => this.run(() => {
       if (this.overlay.geometryPreviewPending || this.overlay.placementMode) throw new Error("Save or discard grid placement changes before selecting cells");
       if (!this.overlay.root) this.overlay.attach();
       if (!this.overlay.root) throw new Error("Gridlines overlay could not attach to Foundry's canvas; check the browser console");
       this.overlay.setSelecting(!this.overlay.selecting);
-    }), selectionTools);
+    }), selectionToolsActions);
     const modeWrap=node("label",selectionTools,undefined,"gridlines-field");
     node("span",modeWrap,"Select on map");
     const mode=node("select",modeWrap);
@@ -688,9 +776,8 @@ export class GridlinesPanel {
     }
     mode.value=this.overlay.selectionMode ?? "major";
     mode.addEventListener("change",()=>{this.overlay.setSelectionMode(mode.value);this.refresh();});
-    node("small",selectionTools,"Left-drag selects. Right-drag remains Foundry map pan. Major mode selects whole displayed blocks; Fine mode selects individual underlying cells.");
-    const nav = node("div", root, undefined, "gridlines-section");
-    node("strong", nav, "Go To");
+    node("small",selectionTools,"Left-drag selects; right-drag pans. Major = full map block; Fine = subcells.");
+    node("strong", nav, "Go to a map coordinate or named area");
     const navRow = node("div", nav, undefined, "gridlines-actions");
     const go = node("input", navRow); go.type = "text"; go.placeholder = "G14, G14.3,4 or Warehouse"; go.value = this.inputs.go;
     go.setAttribute("aria-label", "Coordinate or named range");
@@ -700,9 +787,10 @@ export class GridlinesPanel {
     button("Go", navigate, navRow);
 
     node("small", nav, draft.coordinateScope === "major"
-      ? `G14 is the entire ${draft.majorEveryX}×${draft.majorEveryY} major block. G14.3,4 is fine subcolumn 3, row 4 inside it (G14.C4 also works). cell:D3 targets a legacy absolute fine cell.`
+      ? `G14 = whole major block (${draft.majorEveryX}×${draft.majorEveryY}); G14.3,4 = subcell; cell:D3 = legacy address.`
       : "Existing Scene coordinates use individual cells (legacy mode). Pick A1 to change their displayed numbering; cell:D3 keeps the original fine-cell indices.");
-    const selection = node("div", root, undefined, "gridlines-section");
+    const selection = node("div", areasPane, undefined, "gridlines-section gridlines-area-editor");
+    node("h3", selection, "Create and manage map areas");
     const visibleAddress = r => savedAxes.coordinateScope === "major"
       ? formatDisplayedRange(r,{col:savedAxes.majorEveryX,row:savedAxes.majorEveryY},{row:savedAxes.a1Row,col:savedAxes.a1Col},"numbers")
       : `cell:${formatRange(r)}`;
@@ -712,8 +800,8 @@ export class GridlinesPanel {
       this.overlay.setSelection(null);
       this.refresh();
     }, selectedRow, {disabled: !this.selection, title:"Remove the temporary blue highlight without deleting shading or names"});
-    node("p",selection,"Major mode selects the whole visible G14 block. Fine Subcells mode selects G14.3,4; saved records keep their original fine-cell indices.");
-    const settings = node("div", root, undefined, "gridlines-actions");
+    node("p",selection,"Select major blocks or fine subcells. Saved area IDs and fine-cell positions remain unchanged.");
+    const settings = node("div", selection, undefined, "gridlines-actions gridlines-area-style");
     const color = field("Fill", "color", settings, this.inputs.color);
     color.addEventListener("input", () => { this.inputs.color = color.value; });
     const opacity = field("Opacity %", "number", settings, this.inputs.opacity);
@@ -772,7 +860,7 @@ export class GridlinesPanel {
       this.shadingExpanded = true;
       this.announce(`Saved ${name.value} at ${visibleAddress(selected)}`);
     }), namingRow, {disabled: !this.selection});
-    node("small", naming, "Names and shading with exactly the same saved cell boundaries appear together below. Overlapping but different areas remain separate. No existing IDs are changed.");
+    node("small", naming, "Matching names and shading share one entry. Overlapping extents remain separate.");
 
     const areas = buildMapAreas(state);
     const layers = node("details", selection, undefined, "gridlines-section gridlines-shading-layers gridlines-map-areas");
@@ -935,9 +1023,13 @@ export class GridlinesPanel {
         button("Cancel Region Preview",()=>{this.resetRegionPreview();this.refresh();},actions);
       }
     }
-    const footer = node("small", root, "GM authoring; optional player-visible grid and individually published shading. Scene flags are readable data, not secure GM notes. No automation or camera broadcast.", "gridlines-footer");
-    if (this.statusText) { const note = node("small", root, this.statusText); note.className = "gridlines-status"; }
-    root.scrollTop=priorScroll;
+    const footer = node("small", this.tabPanels.map, "GM controls only. Player-visible grid and shading are opt-in; Scene flags are not secret storage.", "gridlines-footer");
+    if (this.statusText) {
+      const status = node("div", root, this.statusText, "gridlines-status-bar");
+      status.setAttribute("role", "status");
+    }
+    main.scrollTop = this.tabScroll[this.activeTab] ?? 0;
+    root.scrollTop = priorScroll;
     void footer;
   }
 }

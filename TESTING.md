@@ -1,4 +1,16 @@
-# AFT Gridlines+ v0.1.11 — combined Map Areas and transient selection regression report
+# AFT Gridlines+ — local test and release evidence
+
+## v0.1.12 — window and usability tests (2026-10-18)
+
+**Automated/mock:** 93 Node tests passed (90 existing plus three manager/window tests). They cover geometry clamping on small and resized viewports, GM-local layout persistence and reset, drag/resize pointer listeners and right-click rejection, Tab switching/scroll restoration, non-destructive section state, and preservation of existing Map Areas, selection, coordinate, shading, Region, and player sharing workflows.
+
+**Browser DOM/UI mock:** Local Chromium render of actual `GridlinesPanel`, module CSS and a fabricated Scene. All three tabs rendered without JavaScript errors; title dragging moved the panel by 60×20 CSS pixels and the resize grip increased size by 60×40 CSS pixels. This is **not** a Foundry client or a live Scene test.
+
+**Not run / live test requested:** GM in Foundry v14: open manager, drag header, resize from lower-right, switch Map/Map Areas/Grid Setup, edit and save an existing shaded-area name, close and reopen, then check that position and size persist after browser refresh. Verify no Scene writes from dragging alone. Confirm native panning/selection and GM/player permissions still work; ideally check at two resolutions.
+
+**Compatibility and rollback:** `gridlines` ID and `flags.gridlines.state` schema 1 unchanged. Local window layout key may be cleared independently from browser settings; pressing Reset is preferred. Reinstall v0.1.11 to roll back code. A code rollback does not undo earlier explicit Scene-data edits or new native Regions. World/Scene backup advised before upgrades and especially any data-changing actions.
+
+## v0.1.11 — combined Map Areas and transient selection regression report
 
 **Date:** 2026-10-18. **Component:** G03 (`gridlines`) / AFT Gridlines+. **Verified source baseline:** v0.1.10, repository `rebsiot/gridlines` main commit `e76923f73b0b8b04fad274b911c7ac4633a5fead`, checked against the complete local v0.1.10 source. **Installed module and exact live Foundry build:** Unknown.
 

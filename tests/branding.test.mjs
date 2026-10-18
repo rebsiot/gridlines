@@ -8,10 +8,10 @@ test('AFT Gridlines+ is the Foundry package title but stable module ID and URLs 
   const pkg=JSON.parse(text('package.json'));
   assert.equal(manifest.title, 'AFT Gridlines+');
   assert.equal(manifest.id, 'gridlines');
-  assert.equal(manifest.version, '0.1.11');
-  assert.equal(pkg.version, '0.1.11');
+  assert.equal(manifest.version, '0.1.12');
+  assert.equal(pkg.version, '0.1.12');
   assert.equal(manifest.manifest, 'https://raw.githubusercontent.com/rebsiot/gridlines/main/module.json');
-  assert.equal(manifest.download, 'https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.11-alpha.zip');
+  assert.equal(manifest.download, 'https://raw.githubusercontent.com/rebsiot/gridlines/main/dist/gridlines-0.1.12-alpha.zip');
   assert.deepEqual(manifest.esmodules, ['scripts/main.js']);
   assert.deepEqual(manifest.styles, ['styles/gridlines.css']);
 });
@@ -24,5 +24,5 @@ test('all important user-facing launcher and panel headers have branded names wi
   assert.match(main, /title: "AFT Gridlines\+ Manager"/);
   assert.match(main, /controls\.tokens\.tools\.gridlinesManager/);
   assert.match(main, /controls\.gridlines =/);
-  assert.match(panel, /node\("strong", header, "AFT Gridlines\+"\)/);
+  assert.match(panel, /node\("strong", dragArea, "AFT Gridlines\+"\)/);
 });
